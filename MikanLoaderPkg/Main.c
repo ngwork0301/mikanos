@@ -2,6 +2,7 @@
 #include  <Library/UefiLib.h>
 #include  <Library/UefiBootServicesTableLib.h>
 #include  <Library/PrintLib.h>
+#include  <Library/MemoryAllocationLib.h>
 #include  <Protocol/LoadedImage.h>
 #include  <Protocol/SimpleFileSystem.h>
 #include  <Protocol/DiskIo2.h>
@@ -92,10 +93,8 @@ const CHAR16* GetMemoryTypeUnicode(EFI_MEMORY_TYPE type) {
  * @return 成功したらEFI_SUCCESSを返す
  */
 EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
-  //! 1行の書き込み用のバッファ
-  CHAR8 buf[256];
-  //! 1行の長さを格納するテンポラリ変数
-  UINTN len;
+  CHAR8 buf[256];  //!< 1行の書き込み用のバッファ
+  UINTN len;  //!< 1行の長さを格納するテンポラリ変数
 
   // ヘッダを出力
   CHAR8* header =
@@ -106,10 +105,8 @@ EFI_STATUS SaveMemoryMap(struct MemoryMap* map, EFI_FILE_PROTOCOL* file) {
   Print(L"map->buffer = %08lx, map->map_size = %08lx\n",
     map->buffer, map->map_size);
   
-  //! Physicalアドレスのイテレータ
-  EFI_PHYSICAL_ADDRESS iter;
-  //! EFI_MEMORY_DESCRIPTORのindex(=行番号と一致)
-  int i;
+  EFI_PHYSICAL_ADDRESS iter;  //! Physicalアドレスのイテレータ
+  int i;  //! EFI_MEMORY_DESCRIPTORのindex(=行番号と一致)
   // PhysicalアドレスをEFI_MEMORY_DESCRIPTOR分足しながら書き込む
   for (iter = (EFI_PHYSICAL_ADDRESS)map->buffer, i = 0;
        iter < (EFI_PHYSICAL_ADDRESS)map->buffer + map->map_size;
@@ -172,6 +169,68 @@ EFI_STATUS OpenRootDir(EFI_HANDLE image_handle, EFI_FILE_PROTOCOL** root) {
 
 /**
  * @fn
+ * OpenGOP関数
+ * 
+ * @brief
+ * ブートサービスをつかってGOPを開き、初期化する。
+ * 
+ * @param [in] image_handle UefiMain関数の引数で受けとったEFI_HANDLE
+ * @param [out] gop オープンしたGOP(EFI_GRAPHICS_OUTPUT_PROTOCOL)
+ * @return EFI_STATUS 成功したらEFI_SUCCESSを返す
+ */
+EFI_STATUS OpenGOP(EFI_HANDLE image_handle,
+                   EFI_GRAPHICS_OUTPUT_PROTOCOL** gop) {
+  UINTN num_gop_handles = 0;
+  EFI_HANDLE* gop_handles = NULL;
+  gBS->LocateHandleBuffer(
+      ByProtocol,
+      &gEfiGraphicsOutputProtocolGuid,
+      NULL,
+      &num_gop_handles,
+      &gop_handles);
+
+  gBS->OpenProtocol(
+      gop_handles[0],
+      &gEfiGraphicsOutputProtocolGuid,
+      (VOID**)gop,
+      image_handle,
+      NULL,
+      EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
+
+  FreePool(gop_handles);
+
+  return EFI_SUCCESS;
+}
+
+/**
+ * @fn
+ * GetPixelFormatUnicode関数
+ * 
+ * @brief
+ * 各ピクセルフォーマットに対応した名前を文字列で取得する。
+ * 
+ * @param [in] fmt ピクセルフォーマット
+ * @return ピクセルフォーマットの文字列
+ */
+const CHAR16* GetPixelFormatUnicode(EFI_GRAPHICS_PIXEL_FORMAT fmt) {
+  switch (fmt) {
+    case PixelRedGreenBlueReserved8BitPerColor:
+      return L"PixelRedGreenBlueReserved8BitPerColor";
+    case PixelBlueGreenRedReserved8BitPerColor:
+      return L"PixelBlueGreenRedReserved8BitPerColor";
+    case PixelBitMask:
+      return L"PixelBitMask";
+    case PixelBltOnly:
+      return L"PixelBltOnly";
+    case PixelFormatMax:
+      return L"PixelFormatMax";
+    default:
+      return L"InvalidPixelFormat";
+  }
+}
+
+/**
+ * @fn
  * UefiMain関数
  * 
  * @brief
@@ -186,6 +245,7 @@ EFI_STATUS EFIAPI UefiMain(
     EFI_SYSTEM_TABLE *system_table) {
   Print(L"Hello, Mikan World!\n");
 
+  /* /////// MemoryMapの読み出しとファイルへの書き込み処理 //////////////////// */
   // MemoryMap構造体のメモリを確保して、メモリマップを取得して、反映
   CHAR8 memmap_buf[4096 * 4];
   struct MemoryMap memmap = {sizeof(memmap_buf), memmap_buf, 0, 0, 0, 0};
@@ -207,6 +267,26 @@ EFI_STATUS EFIAPI UefiMain(
   SaveMemoryMap(&memmap, memmap_file);
   memmap_file->Close(memmap_file);
 
+  /* /////////// GOPを取得して画面を描画 ///////////////////////////////////// */
+  EFI_GRAPHICS_OUTPUT_PROTOCOL* gop;
+  OpenGOP(image_handle, &gop);
+  Print(L"Resolution: %ux%u, Pixel Format: %s, %u pixels/line \n",
+      gop->Mode->Info->HorizontalResolution,
+      gop->Mode->Info->VerticalResolution,
+      GetPixelFormatUnicode(gop->Mode->Info->PixelFormat),
+      gop->Mode->Info->PixelsPerScanLine);
+  Print(L"Frame Buffer: 0x%0lx - 0x%0lx, Size: %lu bytes\n",
+      gop->Mode->FrameBufferBase,
+      gop->Mode->FrameBufferBase + gop->Mode->FrameBufferSize,
+      gop->Mode->FrameBufferSize);
+  
+  UINT8* frame_buffer = (UINT8*)gop->Mode->FrameBufferBase;
+  // 全データのビットに1をたてて白で塗りつぶす
+  for (UINTN i = 0; i < gop->Mode->FrameBufferSize; ++i) {
+    frame_buffer[i] = 255;
+  }
+
+  /* //////////// カーネルファイルの読み出しと起動 ///////////////////////////// */
   // カーネルファイルをオープン
   EFI_FILE_PROTOCOL* kernel_file;
   root_dir->Open(
@@ -253,6 +333,7 @@ EFI_STATUS EFIAPI UefiMain(
   typedef void EntryPointType(void);
   EntryPointType* entry_point = (EntryPointType*)entry_addr;
   entry_point();
+  /* ////////////////////////////////////////////////////////////////////// */
 
   // 画面出力処理  
   Print(L"All done\n");
