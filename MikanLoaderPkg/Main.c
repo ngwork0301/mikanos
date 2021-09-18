@@ -1,4 +1,5 @@
 #include  <Uefi.h>
+#include <stdalign.h>
 #include  <Library/UefiLib.h>
 #include  <Library/UefiBootServicesTableLib.h>
 #include  <Library/PrintLib.h>
@@ -231,6 +232,18 @@ const CHAR16* GetPixelFormatUnicode(EFI_GRAPHICS_PIXEL_FORMAT fmt) {
 
 /**
  * @fn
+ * Halt関数
+ * 
+ * @brief
+ * 無限ループして止める。エラー処理などでつかう
+ * 
+ **/
+void Halt(void) {
+  while(1) __asm__("hlt");
+}
+
+/**
+ * @fn
  * UefiMain関数
  * 
  * @brief
@@ -296,7 +309,7 @@ EFI_STATUS EFIAPI UefiMain(
 
   // カーネルファイルのヘッダ部分の読み込み
   UINTN file_info_size = sizeof(EFI_FILE_INFO) + sizeof(CHAR16) * 12;
-  UINT8 file_info_buffer[file_info_size];
+  alignas(alignof(EFI_FILE_INFO)) UINT8 file_info_buffer[file_info_size];
   kernel_file->GetInfo(
     kernel_file, &gEfiFileInfoGuid,
     &file_info_size, file_info_buffer);
@@ -306,14 +319,18 @@ EFI_STATUS EFIAPI UefiMain(
 
   // カーネルをページ単位のメモリにロードする
   EFI_PHYSICAL_ADDRESS kernel_base_addr = 0x100000;
-  gBS->AllocatePages(
+  EFI_STATUS status;
+  status = gBS->AllocatePages(
     AllocateAddress, EfiLoaderData,
     (kernel_file_size + 0xfff) / 0x1000, &kernel_base_addr);
+  if (EFI_ERROR(status)) {
+    Print(L"failed to allocate pages: %r", status);
+    Halt();
+  }
   kernel_file->Read(kernel_file, &kernel_file_size, (VOID*)kernel_base_addr);
   Print(L"Kernel: 0x%0lx (%lu bytes)\n", kernel_base_addr, kernel_file_size);
 
   // カーネルを起動する前にブートサービスを停止する
-  EFI_STATUS status;
   status = gBS->ExitBootServices(image_handle, memmap.map_key);
   if (EFI_ERROR(status)) {
     status = GetMemoryMap(&memmap);
