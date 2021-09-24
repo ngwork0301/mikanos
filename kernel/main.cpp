@@ -83,6 +83,11 @@ void operator delete(void* obj) noexcept {
 }
 
 /**
+ * issue #1 純粋仮想関数の呼び出しの可能性があるとリンクエラーになるため定義をいれる
+ */
+extern "C" void __cxa_pure_virtual() { while (1); }
+
+/**
  * グローバル変数
  */
 char pixel_writer_buf[sizeof(RGBResv8ButPerColorPixelWriter)];
