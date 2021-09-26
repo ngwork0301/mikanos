@@ -317,23 +317,43 @@ EFI_STATUS EFIAPI UefiMain(
   // MemoryMap構造体のメモリを確保して、メモリマップを取得して、反映
   CHAR8 memmap_buf[4096 * 4];
   struct MemoryMap memmap = {sizeof(memmap_buf), memmap_buf, 0, 0, 0, 0};
-  GetMemoryMap(&memmap);
+  status = GetMemoryMap(&memmap);
+  if (EFI_ERROR(status)) {
+    Print(L"failed to get memory map: %r\n", status);
+    Halt();
+  }
 
   // rootディレクトリ(/)のハンドラを取得
   EFI_FILE_PROTOCOL* root_dir;
-  OpenRootDir(image_handle, &root_dir);
+  status = OpenRootDir(image_handle, &root_dir);
+  if (EFI_ERROR(status)) {
+    Print(L"failed to open root directory: %r\n", status);
+    Halt();
+  }
 
   // 出力ファイルのファイルディスクリプタを宣言
   EFI_FILE_PROTOCOL* memmap_file;
 
   // 出力ファイルをオープン
-  root_dir->Open(
+  status = root_dir->Open(
     root_dir, &memmap_file, L"\\memmap",
     EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE, 0);
-
-  // オープンしたファイルに書き出して、クローズする
-  SaveMemoryMap(&memmap, memmap_file);
-  memmap_file->Close(memmap_file);
+  if (EFI_ERROR(status)) {
+    Print(L"failed to open file '\\memmap': %r\n", status);
+    Print(L"Ignored.\n");
+  } else {
+    // オープンしたファイルに書き出して、クローズする
+    status = SaveMemoryMap(&memmap, memmap_file);
+    if (EFI_ERROR(status)) {
+      Print(L"failed to save memory map: %r\n", status);
+      Halt();
+    }
+    status = memmap_file->Close(memmap_file);
+    if (EFI_ERROR(status)) {
+      Print(L"failed to close memory map: %r\n", status);
+      Halt();
+    }
+  }
 
   /* /////////// GOPを取得して画面を描画 ///////////////////////////////////// */
   EFI_GRAPHICS_OUTPUT_PROTOCOL* gop;
