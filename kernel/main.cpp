@@ -92,6 +92,53 @@ extern "C" void __cxa_pure_virtual() { while (1); }
  */
 char pixel_writer_buf[sizeof(RGBResv8ButPerColorPixelWriter)];
 PixelWriter* pixel_writer;
+const uint8_t kFontA[16] = {
+  0b00000000, //
+  0b00011000, //    **
+  0b00011000, //    **
+  0b00011000, //    **
+  0b00011000, //    **
+  0b00100100, //   *  *
+  0b00100100, //   *  *
+  0b00100100, //   *  *
+  0b00100100, //   *  *
+  0b01111110, //  ******
+  0b01000010, //  *    *
+  0b01000010, //  *    *
+  0b01000010, //  *    *
+  0b11100111, // ***  ***
+  0b00000000, //
+  0b00000000, //
+};
+/**
+ * @fn
+ * WriteAscii関数
+ * 
+ * @brief
+ * フォントを描画する
+ * 
+ * @param [in] writer
+ * @param [in, out] x
+ * @param [in, out] y
+ * @param [in] char
+ * @param [in] color
+ */
+void WriteAscii(PixelWriter& writer, int x, int y, char c, const PixelColor& color) {
+  // 現状Aしかないので、それ以外は終了させる
+  if (c != 'A') {
+    return;
+  }
+  // タテ 16bit 分ループ
+  for (int dy = 0; dy < 16; ++dy) {
+    // ヨコ 8bit 分ループ
+    for (int dx = 0; dx < 8; ++dx) {
+      // dx で左シフトしたあと、0x80(=0b1000000)との論理和をとって描画するか判定
+      if ((kFontA[dy] << dx) & 0x80u) {
+        writer.Write(x + dx, y + dy, color);
+      }
+    }
+  }
+}
 
 /**
  * @fn
@@ -121,12 +168,18 @@ extern "C" void KernelMain(const struct FrameBufferConfig& frame_buffer_config) 
     }
   }
   // 仮想ウィンドウのピクセル描画
-  // 位置は、左上から100,100。大きさは、200 x 100。色は(0, 255, 0)=緑
+  // 位置は、左上から0,0。大きさは、200 x 100。色は(0, 255, 0)=緑
   for (int x = 0; x < 200; ++x) {
     for(int y = 0; y < 100; ++y) {
-      pixel_writer->Write(100 + x, 100 + y, {0, 255, 0});
+      int xoffset = 0;
+      int yoffset = 0;
+      pixel_writer->Write(xoffset + x, yoffset + y, {0, 255, 0});
     }
   }
+  // 文字列Aを描画
+  WriteAscii(*pixel_writer, 50, 50, 'A', {0,0,0});
+  WriteAscii(*pixel_writer, 58, 50, 'A', {0,0,0});
+
   // 無限ループ
   while(1) __asm__("hlt");
 }
