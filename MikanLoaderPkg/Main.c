@@ -4,12 +4,14 @@
 #include  <Library/UefiBootServicesTableLib.h>
 #include  <Library/PrintLib.h>
 #include  <Library/MemoryAllocationLib.h>
+#include  <Library/BaseMemoryLib.h>
 #include  <Protocol/LoadedImage.h>
 #include  <Protocol/SimpleFileSystem.h>
 #include  <Protocol/DiskIo2.h>
 #include  <Protocol/BlockIo.h>
 #include  <Guid/FileInfo.h>
 
+#include "elf.hpp"
 #include "frame_buffer_config.hpp"
 
 /**
@@ -246,6 +248,55 @@ void Halt(void) {
 
 /**
  * @fn
+ * CalcLoadAddressRange関数
+ * 
+ * @brief
+ * ロードアドレスの範囲を計算する
+ * 
+ * @param [in] ehdr ファイルヘッダのアドレス
+ * @param [out] first ロードする場所の最初のアドレス
+ * @param [out] last ロードする場所の最後のアドレス
+ */
+void CalcLoadAddressRange(Elf64_Ehdr* ehdr, UINT64* first, UINT64* last) {
+  Elf64_Phdr* phdr = (Elf64_Phdr*)((UINT64)ehdr + ehdr->e_phoff);
+  *first = MAX_UINT64;  //! 最大値で初期化
+  *last = 0;            //! 最小値で初期化
+  // プログラムヘッダの要素ごとにループ
+  for (Elf64_Half i = 0; i < ehdr->e_phnum; ++i) {
+    // プログラムヘッダ要素のtypeがPT_LOADであるセグメントを探査
+    if (phdr[i].p_type != PT_LOAD) continue;
+    *first = MIN(*first, phdr[i].p_vaddr);  // 仮想アドレスの一番小さいものを探査
+    *last = MAX(*last, phdr[i].p_vaddr + phdr[i].p_memsz);  // 仮想アドレス+メモリサイズ
+  }
+}
+
+/**
+ * @fn
+ * CopyLoadSegments関数
+ * 
+ * @brief
+ * LOADセグメントをコピーする
+ * 
+ * @param [in, out] ehdr ファイルヘッダのアドレス
+ */
+void CopyLoadSegments(Elf64_Ehdr* ehdr) {
+  Elf64_Phdr* phdr = (Elf64_Phdr*)((UINT64)ehdr + ehdr->e_phoff);
+  // プログラムヘッダの要素ごとにループ
+  for (Elf64_Half i = 0; i < ehdr->e_phnum; ++i) {
+    if (phdr[i].p_type != PT_LOAD) continue;
+
+    // セグメントをまるごとコピー
+    UINT64 segm_in_file = (UINT64)ehdr + phdr[i].p_offset;
+    CopyMem((VOID*)phdr[i].p_vaddr, (VOID*)segm_in_file, phdr[i].p_filesz);
+
+    // 残りを0で埋める
+    UINTN remain_bytes = phdr[i].p_memsz - phdr[i].p_filesz;
+    SetMem((VOID*)(phdr[i].p_vaddr + phdr[i].p_filesz), remain_bytes, 0);
+  }
+}
+
+/**
+ * @fn
  * UefiMain関数
  * 
  * @brief
@@ -258,6 +309,8 @@ void Halt(void) {
 EFI_STATUS EFIAPI UefiMain(
     EFI_HANDLE image_handle,
     EFI_SYSTEM_TABLE *system_table) {
+  EFI_STATUS status;
+
   Print(L"Hello, Mikan World!\n");
 
   /* /////// MemoryMapの読み出しとファイルへの書き込み処理 //////////////////// */
@@ -319,18 +372,43 @@ EFI_STATUS EFIAPI UefiMain(
   EFI_FILE_INFO* file_info = (EFI_FILE_INFO*)file_info_buffer;
   UINTN kernel_file_size = file_info->FileSize;
 
-  // カーネルをページ単位のメモリにロードする
-  EFI_PHYSICAL_ADDRESS kernel_base_addr = 0x100000;
-  EFI_STATUS status;
-  status = gBS->AllocatePages(
-    AllocateAddress, EfiLoaderData,
-    (kernel_file_size + 0xfff) / 0x1000, &kernel_base_addr);
+  // 一時領域のメモリ確保
+  VOID* kernel_buffer;
+  status = gBS->AllocatePool(EfiLoaderData, kernel_file_size, &kernel_buffer);
   if (EFI_ERROR(status)) {
-    Print(L"failed to allocate pages: %r", status);
+    Print(L"failed to allocate pool: %r\n", status);
     Halt();
   }
-  kernel_file->Read(kernel_file, &kernel_file_size, (VOID*)kernel_base_addr);
-  Print(L"Kernel: 0x%0lx (%lu bytes)\n", kernel_base_addr, kernel_file_size);
+  status = kernel_file->Read(kernel_file, &kernel_file_size, kernel_buffer);
+  if (EFI_ERROR(status)) {
+    Print(L"error: %r\n", status);
+    Halt();
+  }
+
+  // カーネルの場所をしらべて、必要なメモリのサイズを算出
+  Elf64_Ehdr* kernel_ehdr = (Elf64_Ehdr*)kernel_buffer;
+  UINT64 kernel_first_addr, kernel_last_addr;
+  CalcLoadAddressRange(kernel_ehdr, &kernel_first_addr, &kernel_last_addr);
+
+  // メモリをページ単位で確保
+  UINTN num_pages = (kernel_last_addr - kernel_first_addr + 0xfff) / 0x1000;
+  status = gBS->AllocatePages(AllocateAddress, EfiLoaderData,
+                              num_pages, &kernel_first_addr);
+  if (EFI_ERROR(status)) {
+    Print(L"failed to allocate pages: %r\n", status);
+    Halt();
+  }
+
+  // LOADセグメントを確保したメモリにコピー
+  CopyLoadSegments(kernel_ehdr);
+  Print(L"Kernel: 0x%0lx - 0x%0lx\n", kernel_first_addr, kernel_last_addr);
+
+  // 一時領域を解放する
+  status = gBS->FreePool(kernel_buffer);
+  if (EFI_ERROR(status)) {
+    Print(L"failed to free pool: %r\n", status);
+    Halt();
+  }
 
   // カーネルを起動する前にブートサービスを停止する
   status = gBS->ExitBootServices(image_handle, memmap.map_key);
@@ -348,7 +426,7 @@ EFI_STATUS EFIAPI UefiMain(
   }
 
   // カーネルを起動
-  UINT64 entry_addr = *(UINT64*)(kernel_base_addr + 24);
+  UINT64 entry_addr = *(UINT64*)(kernel_first_addr + 24);
 
   /* /////// PixelFormat情報を取得してカーネルに渡す //////////////////////////// */
   struct FrameBufferConfig config = {
