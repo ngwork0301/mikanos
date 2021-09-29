@@ -57,3 +57,23 @@ void WriteAscii(PixelWriter& writer, int x, int y, char c, const PixelColor& col
     }
   }
 }
+
+/**
+ * @fn
+ * WriteString関数
+ * 
+ * @brief
+ * 指定した場所に、指定した文字列を、指定した色で描画する
+ * 
+ * @param [in] writer PixelWriter
+ * @param [in] x 文字列を描画する左端のX座標
+ * @param [in] y 文字列を描画する上端のY座標
+ * @param [in] c 描画する文字列の先頭ポインタ
+ * @param [in] color 色
+ */
+void WriteString(PixelWriter& writer, int x, int y, const char* s, const PixelColor& color) {
+  // 文字列ごとにループして、WriteAsciiを呼び出す。
+  for (int i = 0; s[i] != '\0'; ++i) {
+    WriteAscii(writer, x + 8 * i, y, s[i], color);
+  }
+}
