@@ -20,7 +20,7 @@ def compile(src: str) -> bytes:
 
         # . だったら、0 それ以外は 1 としてビットを並べる
         bits = [(0 if x == '.' else 1) for x in m.group(1)]
-        # ビット配列をint配列に置き換え
+        # ビット配列をint変数に置き換え
         bits_int = functools.reduce(lambda a, b: 2*a + b, bits)
         # リトルエンディアンでバイトデータに変換
         result.append(bits_int.to_bytes(1, byteorder='little'))
