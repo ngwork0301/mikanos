@@ -68,9 +68,11 @@ extern "C" void KernelMain(const struct FrameBufferConfig& frame_buffer_config) 
       pixel_writer->Write(xoffset + x, yoffset + y, {0, 255, 0});
     }
   }
-  // 文字列Aを描画
-  WriteAscii(*pixel_writer, 50, 50, 'A', {0,0,0});
-  WriteAscii(*pixel_writer, 58, 50, 'A', {0,0,0});
+  // !から~(チルダ)までの文字列を描画
+  int i = 0;
+  for (char c = '!'; c <= '~'; ++c, ++i) {
+    WriteAscii(*pixel_writer, 8 * i, 50, c, {0, 0, 0});
+  }
 
   // 無限ループ
   while(1) __asm__("hlt");
