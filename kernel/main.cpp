@@ -38,6 +38,38 @@ PixelWriter* pixel_writer;
 //! コンソールクラスのインスタンス生成用バッファ
 char console_buf[sizeof(Console)];
 Console* console;
+//! デスクトップの背景色とコンソール文字色
+const PixelColor kDesktopBGColor{45, 118, 237};
+const PixelColor kDesktopFGColor{255, 255, 255};
+//! マウスカーソルの形のデータ
+const int kMouseCursorWidth = 15;
+const int kMouseCursorHeight = 24;
+const char mouse_cursor_shape[kMouseCursorHeight][kMouseCursorWidth + 1] {
+  "@              ",
+  "@@             ",
+  "@.@            ",
+  "@..@           ",
+  "@...@          ",
+  "@....@         ",
+  "@.....@        ",
+  "@......@       ",
+  "@.......@      ",
+  "@........@     ",
+  "@.........@    ",
+  "@..........@   ",
+  "@...........@  ",
+  "@............@ ",
+  "@......@@@@@@@@",
+  "@......@       ",
+  "@....@@.@      ",
+  "@...@ @.@      ",
+  "@..@   @.@     ",
+  "@.@    @.@     ",
+  "@@      @.@    ",
+  "@       @.@    ",
+  "         @.@   ",
+  "         @@@   ",
+};
 
 /**
  * @fn
@@ -83,17 +115,46 @@ extern "C" void KernelMain(const struct FrameBufferConfig& frame_buffer_config) 
         BGRResv8BitPerColorPixelWriter{frame_buffer_config};
       break;
   }
-  // 背景ピクセルを描画
-  for (int x = 0; x < frame_buffer_config.horizontal_resolution; ++x) {
-    for (int y = 0; y < frame_buffer_config.vertical_resolution; ++y) {
-      pixel_writer->Write(x, y, {255, 255, 255});
+  // 画面一杯をフレームサイズにする
+  const int kFrameWidth = frame_buffer_config.horizontal_resolution;
+  const int kFrameHeight = frame_buffer_config.vertical_resolution;
+
+  // デスクトップの背景色を描画
+  FillRectangle(*pixel_writer,
+                {0,0},
+                {kFrameWidth, kFrameHeight - 50},
+                kDesktopBGColor);
+  // タスクバーを描画
+  FillRectangle(*pixel_writer,
+                {0, kFrameHeight - 50},
+                {kFrameWidth, 50},
+                {1, 8, 17});
+  // メニューバーのスタートメニューを描画
+  FillRectangle(*pixel_writer,
+                {0, kFrameHeight - 50},
+                {kFrameWidth / 5, 50},
+                {80, 80, 80});
+  // メニューボタンの枠を描画
+  DrawRectangle(*pixel_writer,
+                {10, kFrameHeight - 40},
+                {30, 30},
+                {160, 160, 160});
+  
+  // コンソールを描画
+  console = new(console_buf) Console{
+    *pixel_writer, kDesktopFGColor, kDesktopBGColor
+  };
+  printk("Welcome to MikanOS!\n");
+
+  // マウスカーソルを描画
+  for (int dy = 0; dy < kMouseCursorHeight; ++dy) {
+    for (int dx = 0; dx < kMouseCursorWidth; ++dx) {
+      if (mouse_cursor_shape[dy][dx] == '@') {
+        pixel_writer->Write(200 + dx, 100 + dy, {0, 0, 0});
+      } else if (mouse_cursor_shape[dy][dx] == '.') {
+        pixel_writer->Write(200 + dx, 100 + dy, {255, 255, 255});
+      }
     }
-  }
-  // コンソールクラスをつかって描画
-  console = new(console_buf) Console{*pixel_writer, {0, 0, 0}, {255, 255, 255}};
-  // 27行分描画
-  for (int i = 0; i < 27; ++i) {
-    printk("line %d\n", i);
   }
 
   // 無限ループ
