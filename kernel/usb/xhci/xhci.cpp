@@ -1,10 +1,6 @@
 #include "usb/xhci/xhci.hpp"
 
-#include <cstring>
 #include "logger.hpp"
-#include "pci.hpp"
-#include "interrupt.hpp"
-#include "timer.hpp"
 #include "usb/setupdata.hpp"
 #include "usb/device.hpp"
 #include "usb/descriptor.hpp"
@@ -37,28 +33,6 @@ namespace {
    * 他の処理を挟まず，そのポートについての処理だけをしなければならない．
    * kWaitingAddressed はリセット（kResettingPort）からアドレス割り当て
    * （kAddressingDevice）までの一連の処理の実行を待っている状態．
-   *
-   * ============================
-   * 状態遷移（代表的なパターン）
-   * ============================
-   *
-   * ResetPort()
-   *   kNotConnected --> kResettingPort
-   *
-   * EnableSlot()
-   *   kResettingPort --> kEnablingSlot
-   *
-   * AddressDevice()
-   *   kEnablingSlot --> kAddressingDevice
-   *
-   * InitializeDevice()
-   *   kAddressingDevice --> kInitializingDevice
-   *
-   * ConfigureEndpoints()
-   *   kInitializingDevice --> kConfiguringEndpoints
-   *
-   * CompleteConfiguration()
-   *   kConfiguringEndpoints --> kConfigured
    */
 
   std::array<volatile ConfigPhase, 256> port_config_phase{};  // index: port number
@@ -92,7 +66,7 @@ namespace {
     }
 
     int msb_index;
-    __asm__("bsr %1, %0"
+    asm("bsr %1, %0"
         : "=r"(msb_index) : "m"(value));
     return msb_index;
   }
@@ -242,9 +216,6 @@ namespace {
       return err;
     }
 
-    // デバイスの初期化が終わると dev->OnTransferEventReceived(trb) の中で
-    // dev->IsInitialized() が真になり、下の ConfigureEndpoints() が実行される。
-
     const auto port_id = dev->DeviceContext()->slot_context.bits.root_hub_port_num;
     if (dev->IsInitialized() &&
         port_config_phase[port_id] == ConfigPhase::kInitializingDevice) {
@@ -337,28 +308,7 @@ namespace {
              !r.bits.hc_os_owned_semaphore);
     Log(kDebug, "OS has owned xHC\n");
   }
-
-  void SwitchEhci2Xhci(const pci::Device& xhc_dev) {
-    bool intel_ehc_exist = false;
-    for (int i = 0; i < pci::num_device; ++i) {
-      if (pci::devices[i].class_code.Match(0x0cu, 0x03u, 0x20u) /* EHCI */ &&
-          0x8086 == pci::ReadVendorId(pci::devices[i])) {
-        intel_ehc_exist = true;
-        break;
-      }
-    }
-    if (!intel_ehc_exist) {
-      return;
-    }
-
-    uint32_t superspeed_ports = pci::ReadConfReg(xhc_dev, 0xdc); // USB3PRM
-    pci::WriteConfReg(xhc_dev, 0xd8, superspeed_ports); // USB3_PSSEN
-    uint32_t ehci2xhci_ports = pci::ReadConfReg(xhc_dev, 0xd4); // XUSB2PRM
-    pci::WriteConfReg(xhc_dev, 0xd0, ehci2xhci_ports); // XUSB2PR
-    Log(kDebug, "SwitchEhci2Xhci: SS = %02x, xHCI = %02x\n",
-        superspeed_ports, ehci2xhci_ports);
-  }
-} // namespace
+}
 
 namespace usb::xhci {
 
@@ -394,11 +344,6 @@ namespace usb::xhci {
     usbcmd = op_->USBCMD.Read();
     usbcmd.bits.host_controller_reset = true;
     op_->USBCMD.Write(usbcmd);
-
-    Log(kDebug, "xhci::Controller::Initialize: waiting 1ms...\n");
-    auto after_1ms = int(0.01 * kTimerFreq) + timer_manager->CurrentTick();
-    while (timer_manager->CurrentTick() <= after_1ms);
-
     while (op_->USBCMD.Read().bits.host_controller_reset);
     while (op_->USBSTS.Read().bits.controller_not_ready);
 
@@ -476,7 +421,8 @@ namespace usb::xhci {
   }
 
   Error ConfigureEndpoints(Controller& xhc, Device& dev) {
-    auto& ep_configs = dev.EndpointConfigs();
+    const auto configs = dev.EndpointConfigs();
+    const auto len = dev.NumEndpointConfigs();
 
     memset(&dev.InputContext()->input_control_context, 0, sizeof(InputControlContext));
     memcpy(&dev.InputContext()->slot_context,
@@ -500,25 +446,25 @@ namespace usb::xhci {
         return interval - 1;
       }};
 
-    for (auto& ep_config : ep_configs) {
-      const DeviceContextIndex ep_dci{ep_config.ep_id};
+    for (int i = 0; i < len; ++i) {
+      const DeviceContextIndex ep_dci{configs[i].ep_id};
       auto ep_ctx = dev.InputContext()->EnableEndpoint(ep_dci);
-      switch (ep_config.ep_type) {
+      switch (configs[i].ep_type) {
       case EndpointType::kControl:
         ep_ctx->bits.ep_type = 4;
         break;
       case EndpointType::kIsochronous:
-        ep_ctx->bits.ep_type = ep_config.ep_id.IsIn() ? 5 : 1;
+        ep_ctx->bits.ep_type = configs[i].ep_id.IsIn() ? 5 : 1;
         break;
       case EndpointType::kBulk:
-        ep_ctx->bits.ep_type = ep_config.ep_id.IsIn() ? 6 : 2;
+        ep_ctx->bits.ep_type = configs[i].ep_id.IsIn() ? 6 : 2;
         break;
       case EndpointType::kInterrupt:
-        ep_ctx->bits.ep_type = ep_config.ep_id.IsIn() ? 7 : 3;
+        ep_ctx->bits.ep_type = configs[i].ep_id.IsIn() ? 7 : 3;
         break;
       }
-      ep_ctx->bits.max_packet_size = ep_config.max_packet_size;
-      ep_ctx->bits.interval = convert_interval(ep_config.ep_type, ep_config.interval);
+      ep_ctx->bits.max_packet_size = configs[i].max_packet_size;
+      ep_ctx->bits.interval = convert_interval(configs[i].ep_type, configs[i].interval);
       ep_ctx->bits.average_trb_length = 1;
 
       auto tr = dev.AllocTransferRing(ep_dci, 32);
@@ -556,77 +502,5 @@ namespace usb::xhci {
     xhc.PrimaryEventRing()->Pop();
 
     return err;
-  }
-
-  Controller* controller;
-
-  void Initialize() {
-    // Intel 製を優先して xHC を探す
-    pci::Device* xhc_dev = nullptr;
-    for (int i = 0; i < pci::num_device; ++i) {
-      if (pci::devices[i].class_code.Match(0x0cu, 0x03u, 0x30u)) {
-        xhc_dev = &pci::devices[i];
-
-        if (0x8086 == pci::ReadVendorId(*xhc_dev)) {
-          break;
-        }
-      }
-    }
-
-    if (xhc_dev) {
-      Log(kInfo, "xHC has been found: %d.%d.%d\n",
-          xhc_dev->bus, xhc_dev->device, xhc_dev->function);
-    } else {
-      Log(kError, "xHC has not been found\n");
-      exit(1);
-    }
-
-    const uint8_t bsp_local_apic_id =
-      *reinterpret_cast<const uint32_t*>(0xfee00020) >> 24;
-    pci::ConfigureMSIFixedDestination(
-        *xhc_dev, bsp_local_apic_id,
-        pci::MSITriggerMode::kLevel, pci::MSIDeliveryMode::kFixed,
-        InterruptVector::kXHCI, 0);
-
-    const WithError<uint64_t> xhc_bar = pci::ReadBar(*xhc_dev, 0);
-    Log(kDebug, "ReadBar: %s\n", xhc_bar.error.Name());
-    const uint64_t xhc_mmio_base = xhc_bar.value & ~static_cast<uint64_t>(0xf);
-    Log(kDebug, "xHC mmio_base = %08lx\n", xhc_mmio_base);
-
-    usb::xhci::controller = new Controller{xhc_mmio_base};
-    Controller& xhc = *usb::xhci::controller;
-
-    if (0x8086 == pci::ReadVendorId(*xhc_dev)) {
-      SwitchEhci2Xhci(*xhc_dev);
-    }
-    if (auto err = xhc.Initialize()) {
-      Log(kError, "xhc initialize failed: %s\n", err.Name());
-      exit(1);
-    }
-
-    Log(kInfo, "xHC starting\n");
-    xhc.Run();
-
-    for (int i = 1; i <= xhc.MaxPorts(); ++i) {
-      auto port = xhc.PortAt(i);
-      Log(kDebug, "Port %d: IsConnected=%d\n", i, port.IsConnected());
-
-      if (port.IsConnected()) {
-        if (auto err = ConfigurePort(xhc, port)) {
-          Log(kError, "failed to configure port: %s at %s:%d\n",
-              err.Name(), err.File(), err.Line());
-          continue;
-        }
-      }
-    }
-  }
-
-  void ProcessEvents() {
-    while (controller->PrimaryEventRing()->HasFront()) {
-      if (auto err = ProcessEvent(*controller)) {
-        Log(kError, "Error while ProcessEvent: %s at %s:%d\n",
-            err.Name(), err.File(), err.Line());
-      }
-    }
   }
 }
