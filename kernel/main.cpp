@@ -8,6 +8,10 @@
 #include <cstddef>
 #include <cstdio>
 
+#include <numeric>
+#include <vector>
+
+#include "asmfunc.h"
 #include "font.hpp"
 #include "frame_buffer_config.hpp"
 #include "console.hpp"
@@ -20,7 +24,7 @@
 #include "usb/classdriver/mouse.hpp"
 #include "usb/xhci/xhci.hpp"
 #include "usb/xhci/trb.hpp"
-
+#include "interrupt.hpp"
 
 /**
  * 配置new演算子の定義
@@ -53,6 +57,8 @@ const PixelColor kDesktopFGColor{255, 255, 255};
 //! マウスカーソルのインスタンス生成用バッファ
 char mouse_cursor_buf[sizeof(MouseCursor)];
 MouseCursor* mouse_cursor;
+//! xHCI用ホストコントローラ
+usb::xhci::Controller* xhc;
 
 /**
  * @fn
@@ -75,6 +81,28 @@ int printk(const char* format, ...) {
 
   console->PutString(s);
   return result;
+}
+
+/**
+ * @fn
+ * InHandlerXHCI関数
+ * 
+ * @brief
+ * xHCI用割り込みハンドラの定義
+ * 
+ * @param [in] frame InterruptFrame(未使用)
+ */
+__attribute__((interrupt))
+void IntHandlerXHCI(InterruptFrame* frame) {
+  // イベントの有無を確認して、実行
+  while (xhc->PrimaryEventRing()->HasFront()) {
+    if (auto err = ProcessEvent(*xhc)) {
+      Log(kError, "Error while ProcessEvent: %s at %s:%d\n",
+          err.Name(), err.File(), err.Line());
+    }
+  }
+  // 割り込み処理が終わったことを通知
+  NotifyEndOfInterrupt();
 }
 
 /**
@@ -210,6 +238,22 @@ extern "C" void KernelMain(const struct FrameBufferConfig& frame_buffer_config) 
     }
   }
 
+  // 割り込み記述子IDTを設定
+  // 現在のコードセグメントのセレクタ値を取得
+  const uint16_t cs = GetCS();
+  // DPLは0固定で設定
+  SetIDTEntry(idt[InterruptVector::kXHCI], MakeIDTAttr(DescriptorType::kInterruptGate, 0),
+              reinterpret_cast<uint64_t>(IntHandlerXHCI), cs);
+  LoadIDT(sizeof(idt) - 1, reinterpret_cast<uintptr_t>(&idt[0]));
+
+  // MSI割り込みを有効化する
+  const uint8_t bsp_local_apic_id =
+      *reinterpret_cast<const uint32_t*>(0xfee00020) >> 24;
+  pci::ConfigureMSIFixedDestination(
+      *xhc_dev, bsp_local_apic_id,
+      pci::MSITriggerMode::kLevel, pci::MSIDeliveryMode::kFixed,
+      InterruptVector::kXHCI, 0);
+
   // PCIコンフィギュレーション空間からxHCIのBAR0を読み撮ってMMIOを探す
   const WithError<uint64_t> xhc_bar = pci::ReadBar(*xhc_dev, 0);
   Log(kDebug, "ReadBar: %s\n", xhc_bar.error.Name());
@@ -229,6 +273,9 @@ extern "C" void KernelMain(const struct FrameBufferConfig& frame_buffer_config) 
   Log(kInfo, "xHC starting\n");
   xhc.Run();
 
+  ::xhc = &xhc;
+  __asm__("sti");
+
   // USBマウスからのデータを受信する関数として、MouseObserverをセット
   usb::HIDMouseDriver::default_observer = MouseObserver;
   // xHCIのデバイスからマウスを探し出し、設定する
@@ -245,11 +292,5 @@ extern "C" void KernelMain(const struct FrameBufferConfig& frame_buffer_config) 
     }
   }
 
-  // xHCに溜まったイベントを処理する。
-  while(1) {
-    if (auto err = ProcessEvent(xhc)) {
-      Log(kError, "Error while ProcessEvent: %s at %s:%d\n",
-          err.Name(), err.File(), err.Line());
-    }
-  }
+  while (1) __asm__("hlt");
 }
