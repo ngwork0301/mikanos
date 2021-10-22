@@ -12,19 +12,33 @@
 #include <vector>
 
 #include "asmfunc.h"
+#include "console.hpp"
 #include "font.hpp"
 #include "frame_buffer_config.hpp"
-#include "console.hpp"
 #include "graphics.hpp"
+#include "interrupt.hpp"
 #include "logger.hpp"
-#include "pci.hpp"
 #include "mouse.hpp"
+#include "pci.hpp"
+#include "queue.hpp"
 #include "usb/memory.hpp"
 #include "usb/device.hpp"
 #include "usb/classdriver/mouse.hpp"
 #include "usb/xhci/xhci.hpp"
 #include "usb/xhci/trb.hpp"
-#include "interrupt.hpp"
+
+/**
+ * @struct
+ * Message構造体
+ * 
+ * @brief
+ * キューに溜めるメッセージの形式を定義
+ */
+struct Message {
+  enum Type {
+    kInterrunptXHCI,
+  } type;
+};
 
 /**
  * 配置new演算子の定義
@@ -59,6 +73,8 @@ char mouse_cursor_buf[sizeof(MouseCursor)];
 MouseCursor* mouse_cursor;
 //! xHCI用ホストコントローラ
 usb::xhci::Controller* xhc;
+//! MSI割り込みイベント処理につかうキュー
+ArrayQueue<Message>* main_queue;
 
 /**
  * @fn
@@ -94,13 +110,8 @@ int printk(const char* format, ...) {
  */
 __attribute__((interrupt))
 void IntHandlerXHCI(InterruptFrame* frame) {
-  // イベントの有無を確認して、実行
-  while (xhc->PrimaryEventRing()->HasFront()) {
-    if (auto err = ProcessEvent(*xhc)) {
-      Log(kError, "Error while ProcessEvent: %s at %s:%d\n",
-          err.Name(), err.File(), err.Line());
-    }
-  }
+  // イベントをキューに溜める
+  main_queue->Push(Message{Message::kInterrunptXHCI});
   // 割り込み処理が終わったことを通知
   NotifyEndOfInterrupt();
 }
@@ -208,6 +219,11 @@ extern "C" void KernelMain(const struct FrameBufferConfig& frame_buffer_config) 
     pixel_writer, kDesktopBGColor, {300, 200}
   };
 
+  // イベント処理のためのメインキューのインスタンス化
+  std::array<Message, 32> main_queue_data;
+  ArrayQueue<Message> main_queue{main_queue_data};
+  ::main_queue = &main_queue;
+
   // PCIデバイスを列挙する
   auto err = pci::ScanAllBus();
   Log(kDebug, "ScanAllBus: %s\n", err.Name());
@@ -274,7 +290,7 @@ extern "C" void KernelMain(const struct FrameBufferConfig& frame_buffer_config) 
   xhc.Run();
 
   ::xhc = &xhc;
-  __asm__("sti");
+  //__asm__("sti");
 
   // USBマウスからのデータを受信する関数として、MouseObserverをセット
   usb::HIDMouseDriver::default_observer = MouseObserver;
@@ -289,6 +305,38 @@ extern "C" void KernelMain(const struct FrameBufferConfig& frame_buffer_config) 
             err.Name(), err.File(), err.Line());
         continue;
       }
+    }
+  }
+
+  // キューにたまったイベントを処理するイベントループ
+  while(true) {
+    // cliオペランドで割り込みを一時的に受け取らないようにする
+    __asm__("cli");
+    // イベントがキューに溜まっていない場合は、割り込みを受け取る状態にして停止させる
+    if (main_queue.Count() == 0) {
+      __asm__("sti\n\thlt");
+      continue;
+    }
+
+    // キューからメッセージを１つ取り出し
+    Message msg = main_queue.Front();
+    main_queue.Pop();
+    // MSI割り込み受け付けを再開
+    __asm__("sti");
+
+    switch (msg.type) {
+      // XHCIからのマウスイベントの場合
+      case Message::kInterrunptXHCI:
+        while (xhc.PrimaryEventRing()->HasFront()) {
+          if (auto err = ProcessEvent(xhc)) {
+            Log(kError, "Error while ProcessEvent: %s at %s:%d\n",
+                err.Name(), err.File(), err.Line());
+          }
+        }
+        break;
+      // どれにも該当しないイベント型だった場合
+      default:
+        Log(kError, "Unknown message type: %d\n", msg.type);
     }
   }
 
