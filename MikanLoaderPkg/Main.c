@@ -13,19 +13,7 @@
 
 #include "elf.hpp"
 #include "frame_buffer_config.hpp"
-
-/**
- * @struct
- * MemoryMap構造体
- */
-struct MemoryMap {
-  UINTN buffer_size;
-  VOID* buffer;
-  UINTN map_size;
-  UINTN map_key;
-  UINTN descriptor_size;
-  UINT32 descriptor_version;
-};
+#include "memory_map.hpp"
 
 /**
  * @fn
@@ -468,9 +456,10 @@ EFI_STATUS EFIAPI UefiMain(
       Halt();
   }
 
-  typedef void EntryPointType(const struct FrameBufferConfig*);
+  typedef void EntryPointType(const struct FrameBufferConfig*,
+                              const struct MemoryMap*);
   EntryPointType* entry_point = (EntryPointType*)entry_addr;
-  entry_point(&config);
+  entry_point(&config, &memmap);
   /* ////////////////////////////////////////////////////////////////////// */
 
   // 画面出力処理  
