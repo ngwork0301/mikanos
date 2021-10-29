@@ -20,8 +20,10 @@
 #include "logger.hpp"
 #include "memory_map.hpp"
 #include "mouse.hpp"
+#include "paging.hpp"
 #include "pci.hpp"
 #include "queue.hpp"
+#include "segment.hpp"
 #include "usb/memory.hpp"
 #include "usb/device.hpp"
 #include "usb/classdriver/mouse.hpp"
@@ -162,18 +164,35 @@ void MouseObserver(int8_t displacement_x, int8_t displacement_y) {
 
 /**
  * @fn
- * KernelMain関数
+ * KernelMainNewStack関数
  * 
  * @brief
- * カーネルのエントリポイント
- * 
- * @param [in] frame_buffer_config FrameBufferConfig構造体
- * @param [in] memory_map UEFIのブートサービスが取得したメモリマップ
+ * スタック領域を移動する処理を含んだ別のカーネルエントリポイント
+ * @param [in] frame_buffer_config_ref FrameBufferConfig構造体への参照
+ * @param [in] memory_map_ref UEFIのブートサービスが取得したメモリマップへの参照
  */
-extern "C" void KernelMain(const FrameBufferConfig& frame_buffer_config,
-                           const MemoryMap& memory_map) {
+alignas(16) uint8_t kernel_main_stack[1024 * 1024];
+
+extern "C" void KernelMainNewStack(
+    const FrameBufferConfig& frame_buffer_config_ref,
+    const MemoryMap& memory_map_ref) {
+
+  // 新しいメモリ領域へ移動
+  FrameBufferConfig frame_buffer_config{frame_buffer_config_ref};
+  MemoryMap memory_map{memory_map_ref};
   // ログレベルの設定
   SetLogLevel(kWarn);
+
+  // メモリ管理の初期化処理
+  // セグメンテーションの設定のためGDT(Global Descriptor Table)を再構築する
+  SetupSegments();
+  // 再構築したGDTをCPUのセグメントレジスタに反映
+  const uint16_t kernel_cs = 1 << 3;
+  const uint64_t kernel_ss = 2 << 3;
+  SetDSAll(0);
+  SetCSSS(kernel_cs, kernel_ss);
+  // ページジングの設定
+  SetupIdentityPageTable();
 
   // ピクセルフォーマットを判定して、対応するPixelWriterインスタンスを生成
   switch (frame_buffer_config.pixel_format) {
@@ -219,28 +238,21 @@ extern "C" void KernelMain(const FrameBufferConfig& frame_buffer_config,
 
   // 取得したメモリマップの情報を出力する
   printk("memory_map: %p\n", &memory_map);
-  for (uintptr_t iter = reinterpret_cast<uintptr_t>(memory_map.buffer);
-       iter < reinterpret_cast<uintptr_t>(memory_map.buffer) + memory_map.map_size;
-        iter += memory_map.descriptor_size) {
+  const auto memory_map_base = reinterpret_cast<uintptr_t>(memory_map.buffer);
+  for (uintptr_t iter = memory_map_base;
+       iter < memory_map_base + memory_map.map_size;
+       iter += memory_map.descriptor_size) {
     // MemoryDescriptorごとに取り出し
     auto desc = reinterpret_cast<MemoryDescriptor*>(iter);
 
-    // 以下のMemoryTypeの中身をみてみる
-    const std::array available_memory_types{
-        MemoryType::kEfiBootServicesCode,
-        MemoryType::kEfiBootServicesData,
-        MemoryType::kEfiConventionalMemory,
-      };
-    for (int i = 0; i < available_memory_types.size(); ++i) {
+    if (IsAvailable(static_cast<MemoryType>(desc->type))) {
       // MemoryTypeごとに物理メモリアドレスやサイズ、ページ数、属性を出力
-      if (desc->type == available_memory_types[i]) {
-        printk("type = %u, phys = %08lx - %08lx, pages = %lu, attr = %08lx\n",
-               desc->type,
-               desc->physical_start,
-               desc->physical_start + desc->number_of_pages * 4096 -1,
-               desc->number_of_pages,
-               desc->attribute);
-      }
+      printk("type = %u, phys = %08lx - %08lx, pages = %lu, attr = %08lx\n",
+             desc->type,
+             desc->physical_start,
+             desc->physical_start + desc->number_of_pages * 4096 -1,
+             desc->number_of_pages,
+             desc->attribute);
     }
   }
 
@@ -285,11 +297,9 @@ extern "C" void KernelMain(const FrameBufferConfig& frame_buffer_config,
   }
 
   // 割り込み記述子IDTを設定
-  // 現在のコードセグメントのセレクタ値を取得
-  const uint16_t cs = GetCS();
   // DPLは0固定で設定
   SetIDTEntry(idt[InterruptVector::kXHCI], MakeIDTAttr(DescriptorType::kInterruptGate, 0),
-              reinterpret_cast<uint64_t>(IntHandlerXHCI), cs);
+              reinterpret_cast<uint64_t>(IntHandlerXHCI), kernel_cs);
   LoadIDT(sizeof(idt) - 1, reinterpret_cast<uintptr_t>(&idt[0]));
 
   // MSI割り込みを有効化する
