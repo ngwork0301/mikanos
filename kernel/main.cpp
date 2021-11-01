@@ -19,6 +19,7 @@
 #include "interrupt.hpp"
 #include "logger.hpp"
 #include "memory_map.hpp"
+#include "memory_manager.hpp"
 #include "mouse.hpp"
 #include "paging.hpp"
 #include "pci.hpp"
@@ -78,6 +79,9 @@ MouseCursor* mouse_cursor;
 usb::xhci::Controller* xhc;
 //! MSI割り込みイベント処理につかうキュー
 ArrayQueue<Message>* main_queue;
+//! BitmapMemoryManagerのインスタンス生成用バッファ
+char memory_manager_buf[sizeof(BitmapMemoryManager)];
+BitmapMemoryManager* memory_manager;
 
 /**
  * @fn
@@ -177,13 +181,13 @@ extern "C" void KernelMainNewStack(
     const FrameBufferConfig& frame_buffer_config_ref,
     const MemoryMap& memory_map_ref) {
 
-  // 新しいメモリ領域へ移動
-  FrameBufferConfig frame_buffer_config{frame_buffer_config_ref};
-  MemoryMap memory_map{memory_map_ref};
   // ログレベルの設定
   SetLogLevel(kWarn);
 
-  // メモリ管理の初期化処理
+  // 新しいメモリ領域へ移動
+  FrameBufferConfig frame_buffer_config{frame_buffer_config_ref};
+  MemoryMap memory_map{memory_map_ref};
+
   // セグメンテーションの設定のためGDT(Global Descriptor Table)を再構築する
   SetupSegments();
   // 再構築したGDTをCPUのセグメントレジスタに反映
@@ -236,16 +240,34 @@ extern "C" void KernelMainNewStack(
   };
   printk("Welcome to MikanOS!\n");
 
+  // メモリ管理の初期化処理
+  ::memory_manager = new(memory_manager_buf) BitmapMemoryManager;
+
   // 取得したメモリマップの情報を出力する
   printk("memory_map: %p\n", &memory_map);
   const auto memory_map_base = reinterpret_cast<uintptr_t>(memory_map.buffer);
+  uintptr_t available_end = 0;
   for (uintptr_t iter = memory_map_base;
        iter < memory_map_base + memory_map.map_size;
        iter += memory_map.descriptor_size) {
     // MemoryDescriptorごとに取り出し
     auto desc = reinterpret_cast<MemoryDescriptor*>(iter);
 
+    // 未使用領域が物理メモリのスタート位置より小さい場合（＝最初の領域）は、使用中領域
+    if (available_end < desc->physical_start) {
+      // メモリ管理に使用中領域にすることを知らせる
+      memory_manager->MarkAllocated(
+          FrameID{available_end / kBytesPerFrame},
+          (desc->physical_start - available_end) / kBytesPerFrame);
+    }
+    // ディスクリプタが持つ、物理メモリで使用できる最後のアドレスを計算
+    const auto physical_end =
+      desc->physical_start + desc->number_of_pages * kUEFIPageSize;
     if (IsAvailable(static_cast<MemoryType>(desc->type))) {
+      // 未使用領域の場合
+      // 未使用領域と物理領域を一致させる
+      available_end = physical_end;
+
       // MemoryTypeごとに物理メモリアドレスやサイズ、ページ数、属性を出力
       printk("type = %u, phys = %08lx - %08lx, pages = %lu, attr = %08lx\n",
              desc->type,
@@ -253,8 +275,17 @@ extern "C" void KernelMainNewStack(
              desc->physical_start + desc->number_of_pages * 4096 -1,
              desc->number_of_pages,
              desc->attribute);
+
+    } else {
+      // 使用中領域の場合
+      // メモリ管理に使用中領域にすることを知らせる
+      memory_manager->MarkAllocated(
+          FrameID{desc->physical_start / kBytesPerFrame},
+          desc->number_of_pages * kUEFIPageSize / kBytesPerFrame);
     }
   }
+  // メモリ管理に大きさを設定する。
+  memory_manager->SetMemoryRange(FrameID{1}, FrameID{available_end / kBytesPerFrame});
 
   // マウスカーソルのインスタンス化
   mouse_cursor = new(mouse_cursor_buf) MouseCursor{
