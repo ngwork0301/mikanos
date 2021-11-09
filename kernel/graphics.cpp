@@ -46,27 +46,6 @@ void BGRResv8BitPerColorPixelWriter::Write(int x, int y, const PixelColor& c) {
 
 /**
  * @fn
- * FillRectangle関数
- * 
- * @brief
- * 指定した長方形領域を指定した色で塗りつぶす
- * 
- * @param [in] writer
- * @param [in] pos 位置(X,Y座標Vector2D)
- * @param [in] size 大きさ(width, height Vector2D)
- * @param [in] c 色
- */
-void FillRectangle(PixelWriter& writer, const Vector2D<int>& pos,
-                   const Vector2D<int>& size, const PixelColor& c) {
-  for (int dy = 0; dy < size.y; ++dy) {
-    for (int dx = 0; dx < size.x; ++dx) {
-      writer.Write(pos.x + dx, pos.y + dy, c);
-    }
-  }
-}
-
-/**
- * @fn
  * DrawRectangle
  * 
  * @brief
@@ -89,4 +68,59 @@ void DrawRectangle(PixelWriter& writer, const Vector2D<int>& pos,
     writer.Write(pos.x, pos.y + dy, c);
     writer.Write(pos.x + size.x, pos.y + dy, c);
   }
+}
+
+/**
+ * @fn
+ * FillRectangle関数
+ * 
+ * @brief
+ * 指定した長方形領域を指定した色で塗りつぶす
+ * 
+ * @param [in] writer
+ * @param [in] pos 位置(X,Y座標Vector2D)
+ * @param [in] size 大きさ(width, height Vector2D)
+ * @param [in] c 色
+ */
+void FillRectangle(PixelWriter& writer, const Vector2D<int>& pos,
+                   const Vector2D<int>& size, const PixelColor& c) {
+  for (int dy = 0; dy < size.y; ++dy) {
+    for (int dx = 0; dx < size.x; ++dx) {
+      writer.Write(pos.x + dx, pos.y + dy, c);
+    }
+  }
+}
+
+/**
+ * @fn
+ * DrawDesktop関数
+ * 
+ * @brief
+ * デスクトップ背景を描画する
+ * 
+ * @param [in] writer PixelWriterインスタンス
+ */
+void DrawDesktop(PixelWriter& writer) {
+  const auto width = writer.Width();
+  const auto height = writer.Height();
+  // 背景はkDesktopBGColorで染める
+  FillRectangle(writer,
+                {0, 0},
+                {width, height - 50},
+                kDesktopBGColor);
+  // 下部のタスクバー
+  FillRectangle(writer,
+                {0, height - 50},
+                {width, 50},
+                {1, 8, 17});
+  // 左下のスタートメニューっぽいところ
+  FillRectangle(writer,
+                {0, height - 50},
+                {width / 5, 50},
+                {80, 80, 80});
+  // 左下のスタートボタンのような場所を枠でくり抜き
+  DrawRectangle(writer,
+                {10, height - 40},
+                {30, 30},
+                {160, 160, 160});
 }

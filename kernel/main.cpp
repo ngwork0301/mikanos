@@ -17,6 +17,7 @@
 #include "frame_buffer_config.hpp"
 #include "graphics.hpp"
 #include "interrupt.hpp"
+#include "layer.hpp"
 #include "logger.hpp"
 #include "memory_map.hpp"
 #include "memory_manager.hpp"
@@ -69,12 +70,6 @@ PixelWriter* pixel_writer;
 //! コンソールクラスのインスタンス生成用バッファ
 char console_buf[sizeof(Console)];
 Console* console;
-//! デスクトップの背景色とコンソール文字色
-const PixelColor kDesktopBGColor{45, 118, 237};
-const PixelColor kDesktopFGColor{255, 255, 255};
-//! マウスカーソルのインスタンス生成用バッファ
-char mouse_cursor_buf[sizeof(MouseCursor)];
-MouseCursor* mouse_cursor;
 //! xHCI用ホストコントローラ
 usb::xhci::Controller* xhc;
 //! MSI割り込みイベント処理につかうキュー
@@ -82,6 +77,10 @@ ArrayQueue<Message>* main_queue;
 //! BitmapMemoryManagerのインスタンス生成用バッファ
 char memory_manager_buf[sizeof(BitmapMemoryManager)];
 BitmapMemoryManager* memory_manager;
+//! レイヤーマネージャ
+LayerManager* layer_manager;
+//! マウスを描画するレイヤーのID
+unsigned int mouse_layer_id;
 
 /**
  * @fn
@@ -163,7 +162,8 @@ void SwitchEhci2Xhci(const pci::Device& xhc_dev) {
  * @param [in] y Y座標の移動量
  */
 void MouseObserver(int8_t displacement_x, int8_t displacement_y) {
-  mouse_cursor->MoveRelative({displacement_x, displacement_y});
+  layer_manager->MoveRelative(mouse_layer_id, {displacement_x, displacement_y});
+  layer_manager->Draw();
 }
 
 /**
@@ -181,22 +181,9 @@ extern "C" void KernelMainNewStack(
     const FrameBufferConfig& frame_buffer_config_ref,
     const MemoryMap& memory_map_ref) {
 
-  // ログレベルの設定
-  SetLogLevel(kWarn);
-
   // 新しいメモリ領域へ移動
   FrameBufferConfig frame_buffer_config{frame_buffer_config_ref};
   MemoryMap memory_map{memory_map_ref};
-
-  // セグメンテーションの設定のためGDT(Global Descriptor Table)を再構築する
-  SetupSegments();
-  // 再構築したGDTをCPUのセグメントレジスタに反映
-  const uint16_t kernel_cs = 1 << 3;
-  const uint64_t kernel_ss = 2 << 3;
-  SetDSAll(0);
-  SetCSSS(kernel_cs, kernel_ss);
-  // ページジングの設定
-  SetupIdentityPageTable();
 
   // ピクセルフォーマットを判定して、対応するPixelWriterインスタンスを生成
   switch (frame_buffer_config.pixel_format) {
@@ -209,36 +196,29 @@ extern "C" void KernelMainNewStack(
         BGRResv8BitPerColorPixelWriter{frame_buffer_config};
       break;
   }
-  // 画面一杯をフレームサイズにする
-  const int kFrameWidth = frame_buffer_config.horizontal_resolution;
-  const int kFrameHeight = frame_buffer_config.vertical_resolution;
-
-  // デスクトップの背景色を描画
-  FillRectangle(*pixel_writer,
-                {0,0},
-                {kFrameWidth, kFrameHeight - 50},
-                kDesktopBGColor);
-  // タスクバーを描画
-  FillRectangle(*pixel_writer,
-                {0, kFrameHeight - 50},
-                {kFrameWidth, 50},
-                {1, 8, 17});
-  // メニューバーのスタートメニューを描画
-  FillRectangle(*pixel_writer,
-                {0, kFrameHeight - 50},
-                {kFrameWidth / 5, 50},
-                {80, 80, 80});
-  // メニューボタンの枠を描画
-  DrawRectangle(*pixel_writer,
-                {10, kFrameHeight - 40},
-                {30, 30},
-                {160, 160, 160});
   
+  // 背景の描画処理
+  DrawDesktop(*pixel_writer);
+
   // コンソールを描画
   console = new(console_buf) Console{
-    *pixel_writer, kDesktopFGColor, kDesktopBGColor
+    kDesktopFGColor, kDesktopBGColor
   };
+  console->SetWriter(pixel_writer);
   printk("Welcome to MikanOS!\n");
+
+  // ログレベルの設定
+  SetLogLevel(kWarn);
+
+  // セグメンテーションの設定のためGDT(Global Descriptor Table)を再構築する
+  SetupSegments();
+  // 再構築したGDTをCPUのセグメントレジスタに反映
+  const uint16_t kernel_cs = 1 << 3;
+  const uint64_t kernel_ss = 2 << 3;
+  SetDSAll(0);
+  SetCSSS(kernel_cs, kernel_ss);
+  // ページジングの設定
+  SetupIdentityPageTable();
 
   // メモリ管理の初期化処理
   ::memory_manager = new(memory_manager_buf) BitmapMemoryManager;
@@ -287,10 +267,12 @@ extern "C" void KernelMainNewStack(
   // メモリ管理に大きさを設定する。
   memory_manager->SetMemoryRange(FrameID{1}, FrameID{available_end / kBytesPerFrame});
 
-  // マウスカーソルのインスタンス化
-  mouse_cursor = new(mouse_cursor_buf) MouseCursor{
-    pixel_writer, kDesktopBGColor, {300, 200}
-  };
+  // mallocでつかうヒープ領域の初期化
+  if (auto err = InitializeHeap(*memory_manager)) {
+    Log(kError, "failed to allocate pages: %s at %s:%d\n",
+        err.Name(), err.File(), err.Line());
+    exit(1);
+  }
 
   // イベント処理のためのメインキューのインスタンス化
   std::array<Message, 32> main_queue_data;
@@ -378,6 +360,41 @@ extern "C" void KernelMainNewStack(
       }
     }
   }
+
+  // 画面一杯をフレームサイズにする
+  const int kFrameWidth = frame_buffer_config.horizontal_resolution;
+  const int kFrameHeight = frame_buffer_config.vertical_resolution;
+
+  // 背景ウィンドウを生成
+  auto bgwindow = std::make_shared<Window>(kFrameWidth, kFrameHeight);
+  auto bgwriter = bgwindow->Writer();
+
+  // 背景の描画処理
+  DrawDesktop(*bgwriter);
+  console->SetWriter(bgwriter);
+
+  // マウスウィンドウの生成
+  auto mouse_window = std::make_shared<Window>(
+    kMouseCursorWidth, kMouseCursorHeight);
+  mouse_window->SetTransparentColor(kMouseTransparentColor);
+  DrawMouseCursor(mouse_window->Writer(), {0,0});
+
+  // レイヤーマネージャの生成
+  layer_manager = new LayerManager;
+  layer_manager->SetWriter(pixel_writer);
+
+  auto bglayer_id = layer_manager->NewLayer()
+      .SetWindow(bgwindow)
+      .Move({0,0})
+      .ID();
+  mouse_layer_id = layer_manager->NewLayer()
+      .SetWindow(mouse_window)
+      .Move({200, 200})
+      .ID();
+  
+  layer_manager->UpDown(bglayer_id, 0);
+  layer_manager->UpDown(mouse_layer_id, 1);
+  layer_manager->Draw();
 
   // キューにたまったイベントを処理するイベントループ
   while(true) {
