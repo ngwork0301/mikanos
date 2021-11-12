@@ -26,6 +26,7 @@
 #include "pci.hpp"
 #include "queue.hpp"
 #include "segment.hpp"
+#include "timer.hpp"
 #include "usb/memory.hpp"
 #include "usb/device.hpp"
 #include "usb/classdriver/mouse.hpp"
@@ -163,7 +164,12 @@ void SwitchEhci2Xhci(const pci::Device& xhc_dev) {
  */
 void MouseObserver(int8_t displacement_x, int8_t displacement_y) {
   layer_manager->MoveRelative(mouse_layer_id, {displacement_x, displacement_y});
+  // 時間計測を開始
+  StartLAPICTimer();
   layer_manager->Draw();
+  auto elapsed = LAPICTimerElapsed();
+  StopLAPICTimer();
+  printk("MouseObserver: elapsed = %u\n", elapsed);
 }
 
 /**
@@ -210,6 +216,9 @@ extern "C" void KernelMainNewStack(
   // ログレベルの設定
   SetLogLevel(kWarn);
 
+  // 時間測定用のLocalAPICレジスタを初期化する。
+  InitializeLAPICTimer();
+
   // セグメンテーションの設定のためGDT(Global Descriptor Table)を再構築する
   SetupSegments();
   // 再構築したGDTをCPUのセグメントレジスタに反映
@@ -224,7 +233,7 @@ extern "C" void KernelMainNewStack(
   ::memory_manager = new(memory_manager_buf) BitmapMemoryManager;
 
   // 取得したメモリマップの情報を出力する
-  printk("memory_map: %p\n", &memory_map);
+  // printk("memory_map: %p\n", &memory_map);
   const auto memory_map_base = reinterpret_cast<uintptr_t>(memory_map.buffer);
   uintptr_t available_end = 0;
   for (uintptr_t iter = memory_map_base;
@@ -249,12 +258,12 @@ extern "C" void KernelMainNewStack(
       available_end = physical_end;
 
       // MemoryTypeごとに物理メモリアドレスやサイズ、ページ数、属性を出力
-      printk("type = %u, phys = %08lx - %08lx, pages = %lu, attr = %08lx\n",
-             desc->type,
-             desc->physical_start,
-             desc->physical_start + desc->number_of_pages * 4096 -1,
-             desc->number_of_pages,
-             desc->attribute);
+      // printk("type = %u, phys = %08lx - %08lx, pages = %lu, attr = %08lx\n",
+      //        desc->type,
+      //        desc->physical_start,
+      //        desc->physical_start + desc->number_of_pages * 4096 -1,
+      //        desc->number_of_pages,
+      //        desc->attribute);
 
     } else {
       // 使用中領域の場合
