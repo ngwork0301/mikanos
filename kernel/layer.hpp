@@ -11,6 +11,7 @@
 #include <map>
 #include <vector>
 
+#include "frame_buffer.hpp"
 #include "graphics.hpp"
 #include "window.hpp"
 
@@ -32,7 +33,7 @@ class Layer {
     Layer& Move(Vector2D<int> pos);
     Layer& MoveRelative(Vector2D<int> pos_diff);
 
-    void DrawTo(PixelWriter& writer) const;
+    void DrawTo(FrameBuffer& screen) const;
 
   private:
     //! 識別ID
@@ -52,7 +53,7 @@ class Layer {
  */
 class LayerManager {
   public:
-    void SetWriter(PixelWriter* writer);
+    void SetWriter(FrameBuffer* screen);
     Layer& NewLayer();
 
     void Draw() const;
@@ -64,7 +65,8 @@ class LayerManager {
     void Hide(unsigned int id);
 
   private:
-    PixelWriter* writer_{nullptr};
+    //! フレームバッファ
+    FrameBuffer* screen_{nullptr};
     //! 生成したレイヤーを生成した順にいれるためのベクトル
     std::vector<std::unique_ptr<Layer>> layers_{};
     //! レイヤーの重なりをいれるベクトル（先頭が最背面、末尾を最前面）

@@ -18,8 +18,8 @@
  * @param [in] y Y座標
  * @param [in] c (PixelColor&)描画する色
  */
-void RGBResv8BitPerColorPixelWriter::Write(int x, int y, const PixelColor& c) {
-  auto p = PixelAt(x, y);
+void RGBResv8BitPerColorPixelWriter::Write(Vector2D<int> pos, const PixelColor& c) {
+  auto p = PixelAt(pos);
   p[0] = c.r;
   p[1] = c.g;
   p[2] = c.b;
@@ -37,8 +37,8 @@ void RGBResv8BitPerColorPixelWriter::Write(int x, int y, const PixelColor& c) {
  * @param [in] y Y座標
  * @param [in] c (PixelColor&)描画する色
  */
-void BGRResv8BitPerColorPixelWriter::Write(int x, int y, const PixelColor& c) {
-  auto p = PixelAt(x, y);
+void BGRResv8BitPerColorPixelWriter::Write(Vector2D<int> pos, const PixelColor& c) {
+  auto p = PixelAt(pos);
   p[0] = c.b;
   p[1] = c.g;
   p[2] = c.r;
@@ -60,13 +60,13 @@ void DrawRectangle(PixelWriter& writer, const Vector2D<int>& pos,
                    const Vector2D<int>& size, const PixelColor& c) {
   // 水平線の描画
   for (int dx = 0; dx < size.x; ++dx) {
-    writer.Write(pos.x + dx, pos.y, c);
-    writer.Write(pos.x + dx, pos.y + size.y - 1, c);
+    writer.Write(pos + Vector2D<int>{dx, 0}, c);
+    writer.Write(pos + Vector2D<int>{dx, size.y - 1}, c);
   }
   // 垂直線の描画
   for (int dy = 0; dy < size.y; ++dy) {
-    writer.Write(pos.x, pos.y + dy, c);
-    writer.Write(pos.x + size.x, pos.y + dy, c);
+    writer.Write(pos + Vector2D<int>{0, dy}, c);
+    writer.Write(pos + Vector2D<int>{size.x - 1, dy}, c);
   }
 }
 
@@ -86,7 +86,7 @@ void FillRectangle(PixelWriter& writer, const Vector2D<int>& pos,
                    const Vector2D<int>& size, const PixelColor& c) {
   for (int dy = 0; dy < size.y; ++dy) {
     for (int dx = 0; dx < size.x; ++dx) {
-      writer.Write(pos.x + dx, pos.y + dy, c);
+      writer.Write(pos + Vector2D<int>{dx, dy}, c);
     }
   }
 }

@@ -40,7 +40,7 @@ const uint8_t* GetFont(char c) {
  * @param [in] char
  * @param [in] color
  */
-void WriteAscii(PixelWriter& writer, int x, int y, char c, const PixelColor& color) {
+void WriteAscii(PixelWriter& writer, Vector2D<int> pos, char c, const PixelColor& color) {
   // フォントデータを取得
   const uint8_t* font = GetFont(c);
   if (font == nullptr) {
@@ -52,7 +52,7 @@ void WriteAscii(PixelWriter& writer, int x, int y, char c, const PixelColor& col
     for (int dx = 0; dx < 8; ++dx) {
       // dx で左シフトしたあと、0x80(=0b1000000)との論理和をとって描画するか判定
       if ((font[dy] << dx) & 0x80u) {
-        writer.Write(x + dx, y + dy, color);
+        writer.Write(pos + Vector2D<int>{dx, dy}, color);
       }
     }
   }
@@ -71,9 +71,9 @@ void WriteAscii(PixelWriter& writer, int x, int y, char c, const PixelColor& col
  * @param [in] c 描画する文字列の先頭ポインタ
  * @param [in] color 色
  */
-void WriteString(PixelWriter& writer, int x, int y, const char* s, const PixelColor& color) {
+void WriteString(PixelWriter& writer, Vector2D<int> pos, const char* s, const PixelColor& color) {
   // 文字列ごとにループして、WriteAsciiを呼び出す。
   for (int i = 0; s[i] != '\0'; ++i) {
-    WriteAscii(writer, x + 8 * i, y, s[i], color);
+    WriteAscii(writer, pos + Vector2D<int>{8 * i, 0}, s[i], color);
   }
 }

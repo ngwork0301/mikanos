@@ -85,11 +85,11 @@ Layer& Layer::MoveRelative(Vector2D<int> pos_diff) {
  * @brief
  * writerに現在設定されているウィンドウの内容を描画する
  * 
- * @param [in] writer PixelWriterオブジェクト
+ * @param [in] writer FrameBuffer
  */
-void Layer::DrawTo(PixelWriter& writer) const {
+void Layer::DrawTo(FrameBuffer& screen) const {
   if (window_) {
-    window_->DrawTo(writer, pos_);
+    window_->DrawTo(screen, pos_);
   }
 }
 
@@ -169,7 +169,7 @@ void LayerManager::MoveRelative(unsigned int id, Vector2D<int> pos_diff) {
  */
 void LayerManager::Draw() const {
   for (auto layer : layer_stack_) {
-    layer->DrawTo(*writer_);
+    layer->DrawTo(*screen_);
   }
 }
 
@@ -236,8 +236,8 @@ void LayerManager::UpDown(unsigned int id, int new_height) {
  * @brief
  * Draw メソッドなどで描画する際の描画先を設定する
  * 
- * @param [in] writer PixelWriterへのポインタ
+ * @param [in] writer FrameBufferへのポインタ
  */
-void LayerManager::SetWriter(PixelWriter* writer) {
-  writer_ = writer;
+void LayerManager::SetWriter(FrameBuffer* screen) {
+  screen_ = screen;
 }

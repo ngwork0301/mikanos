@@ -1,3 +1,5 @@
+#include "error.hpp"
+#include "logger.hpp"
 #include "window.hpp"
 
 /**
@@ -10,10 +12,21 @@
  * @param [in] width 幅
  * @param [in] height 高さ
  */
-Window::Window(int width, int height) : width_{width}, height_{height} {
+Window::Window(int width, int height, PixelFormat shadow_format) : width_{width}, height_{height} {
   data_.resize(height);
   for (int y = 0; y < height; ++y) {
     data_[y].resize(width);
+  }
+
+  FrameBufferConfig config{};
+  config.frame_buffer = nullptr;
+  config.horizontal_resolution = width;
+  config.vertical_resolution = height;
+  config.pixel_format = shadow_format;
+
+  if (auto err = shadow_buffer_.Initialize(config)) {
+    Log(kError, "failed to initialize shadow buffer: %s at %s:%d\n",
+        err.Name(), err.File(), err.Line());
   }
 }
 
@@ -24,27 +37,24 @@ Window::Window(int width, int height) : width_{width}, height_{height} {
  * @brief
  * 与えられた PixelWriter にこのウィンドウの表示領域を描画させる。
  * 
- * @param [in] writer 描画先
+ * @param [in] dst  描画先
  * @param [in, out] position writer の左上を基準とした描画位置
  */
-void Window::DrawTo(PixelWriter& writer, Vector2D<int> position) {
+void Window::DrawTo(FrameBuffer& dst, Vector2D<int> position) {
   // 透過色の設定がない場合は、そのまま長方形を埋める
   if (!transparent_color_) {
-    for (int y = 0; y < Height(); ++y) {
-      for (int x = 0; x < Width(); ++x) {
-        writer.Write(position.x + x, position.y + y, At(x, y));
-      }
-    }
+    dst.Copy(position, shadow_buffer_);
     return;
   }
 
   // 透過色がある場合は、その部分は上塗りしないで描画
   const auto tc = transparent_color_.value();
+  auto& writer = dst.Writer();
   for (int y = 0; y < Height(); ++y){
     for (int x = 0; x < Width(); ++x) {
-      const auto c = At(x, y);
+      const auto c = At(Vector2D<int>{x, y});
       if (c != tc) {
-        writer.Write(position.x + x, position.y + y, c);
+        writer.Write(position + Vector2D<int>{x, y}, c);
       }
     }
   }
@@ -82,27 +92,28 @@ Window::WindowWriter* Window::Writer(){
  * 
  * @brief
  * 指定した位置のピクセルを返す
- * @param [in] x 取得したいピクセルのX座標
- * @param [in] y 取得したいピクセルのY座標
+ * @param [in] pos x,y座標のVector2D<int>
  * @return PixelColor
  */
-PixelColor& Window::At(int x, int y) {
-  return data_[y][x];
+const PixelColor& Window::At(Vector2D<int> pos) const{
+  return data_[pos.y][pos.x];
 }
 
 /**
  * @fn
- * Window::Atメソッド
+ * Window::Writeメソッド
  * 
  * @brief
- * 指定した位置のピクセルを返す
- * @param [in] x 取得したいピクセルのX座標
- * @param [in] y 取得したいピクセルのY座標
- * @return PixelColor
+ * 指定したピクセスを、指定した色に描画する
+ * 
+ * @param [in] pos Vector2D。描画したいピクセルの座標
+ * @param [in] c 描画するPixelColor
  */
-const PixelColor& Window::At(int x, int y) const{
-  return data_[y][x];
+void Window::Write(Vector2D<int> pos, PixelColor c){
+  data_[pos.y][pos.x] = c;
+  shadow_buffer_.Writer().Write(pos, c);
 }
+
 
 /**
  * @fn

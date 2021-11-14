@@ -375,7 +375,8 @@ extern "C" void KernelMainNewStack(
   const int kFrameHeight = frame_buffer_config.vertical_resolution;
 
   // 背景ウィンドウを生成
-  auto bgwindow = std::make_shared<Window>(kFrameWidth, kFrameHeight);
+  auto bgwindow = std::make_shared<Window>(
+      kFrameWidth, kFrameHeight, frame_buffer_config.pixel_format);
   auto bgwriter = bgwindow->Writer();
 
   // 背景の描画処理
@@ -384,13 +385,20 @@ extern "C" void KernelMainNewStack(
 
   // マウスウィンドウの生成
   auto mouse_window = std::make_shared<Window>(
-    kMouseCursorWidth, kMouseCursorHeight);
+      kMouseCursorWidth, kMouseCursorHeight, frame_buffer_config.pixel_format);
   mouse_window->SetTransparentColor(kMouseTransparentColor);
   DrawMouseCursor(mouse_window->Writer(), {0,0});
 
+  // FrameBufferインスタンスの生成
+  FrameBuffer screen;
+  if (auto err = screen.Initialize(frame_buffer_config)) {
+    Log(kError, "failed to initialize frame buffer: %s at %s:%d\n",
+      err.Name(), err.File(), err.Line());
+  }
+
   // レイヤーマネージャの生成
   layer_manager = new LayerManager;
-  layer_manager->SetWriter(pixel_writer);
+  layer_manager->SetWriter(&screen);
 
   auto bglayer_id = layer_manager->NewLayer()
       .SetWindow(bgwindow)
