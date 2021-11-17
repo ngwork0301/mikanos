@@ -1,6 +1,7 @@
 #pragma once
 
 #include "graphics.hpp"
+#include "window.hpp"
 
 /**
  * @class
@@ -18,12 +19,15 @@ class Console {
     Console(const PixelColor& fg_color, const PixelColor& bg_color);
     void PutString(const char* s);
     void SetWriter(PixelWriter* writer);
+    void SetWindow(const std::shared_ptr<Window>& window);
 
   private:
     void Newline();
     void Refresh();
 
     PixelWriter* writer_;
+    //! 自身を出力するウィンドウ
+    std::shared_ptr<Window> window_;
     const PixelColor& fg_color_, bg_color_;
     //! 描画している文字列を保持するバッファ。行はヌル文字分を加えておく
     char buffer_[kRows][kColumns + 1];

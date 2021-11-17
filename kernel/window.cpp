@@ -114,6 +114,19 @@ void Window::Write(Vector2D<int> pos, PixelColor c){
   shadow_buffer_.Writer().Write(pos, c);
 }
 
+/**
+ * @fn
+ * Window::Moveメソッド
+ * 
+ * @brief
+ * ウィンドウ内の表示の移動
+ * @param [in] pos 移動先の左上の座標
+ * @param [in] src 移動する範囲領域。Rectangleインスタンス
+ */
+void Window::Move(Vector2D<int> dst_pos, const Rectangle<int>& src) {
+  // シャドウバッファに処理を委譲
+  shadow_buffer_.Move(dst_pos, src);
+}
 
 /**
  * @fn

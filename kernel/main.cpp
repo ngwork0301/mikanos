@@ -388,7 +388,7 @@ extern "C" void KernelMainNewStack(
 
   // 背景の描画処理
   DrawDesktop(*bgwriter);
-  console->SetWriter(bgwriter);
+  console->SetWindow(bgwindow);
 
   // マウスウィンドウの生成
   auto mouse_window = std::make_shared<Window>(

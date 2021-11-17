@@ -83,13 +83,21 @@ void Console::Newline() {
   // 列数が最大に達していなければ、そのままカーソルを下の列へ移動
   if (cursor_row_ < kRows - 1) {
     ++cursor_row_;
+    return;
+  } 
+  
+  // window_メンバ変数があるときは、高速化
+  if (window_) {
+    // 2行目〜最終行を長方形領域として切り出す
+    Rectangle<int> move_src{{0, 16}, {8 * kColumns, 16 * kRows -1}};
+    // 2行目〜最終行を1行分上に移動
+    window_->Move({0,0}, move_src);
+    // 追加する最終行は一旦塗りつぶし
+    FillRectangle(*writer_, {0, 16 * (kRows -1)}, {8 * kColumns, 16}, bg_color_);
   } else {
-    // 列数が最大になったら、一旦画面を背景色で塗りつぶし
-    for (int y = 0; y < 16 * kRows; ++y) {
-      for (int x = 0; x < 8 * kColumns; ++x) {
-        writer_->Write(Vector2D<int>{x, y}, bg_color_);
-      }
-    }
+    // window_メンバ変数がないときは地道に再描画
+    // 一旦画面を背景色で塗りつぶし
+    FillRectangle(*writer_, {0, 0}, {8 * kColumns, 16 * kRows}, bg_color_);
     // 行ごとにループ
     for (int row = 0; row < kRows - 1; ++row) {
       // 1行ずつバッファを入れ替え
@@ -100,6 +108,25 @@ void Console::Newline() {
     // 最後の行を0で埋める
     memset(buffer_[kRows - 1], 0, kColumns + 1);
   }
+}
+
+/**
+ * @fn
+ * Console::SetWindowメソッド
+ * 
+ * @brief
+ * 自身を出力するウィンドウを設定する。setter。
+ * 出力する文字列をバッファとしてもつのではなく、Windowのもつピクセルデータをつかって
+ * 再描画を高速化する。
+ * @param [in] window Windowインスタンス
+ */
+void Console::SetWindow(const std::shared_ptr<Window>& window) {
+  if (window == window_) {
+    return;
+  }
+  window_ = window;
+  writer_ = window->Writer();
+  Refresh();
 }
 
 /**
