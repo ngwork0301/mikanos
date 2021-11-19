@@ -389,6 +389,13 @@ extern "C" void KernelMainNewStack(
   mouse_window->SetTransparentColor(kMouseTransparentColor);
   DrawMouseCursor(mouse_window->Writer(), {0,0});
 
+  // 小さな表示猟奇を生成して、ウィンドウの絵を描く
+  auto main_window = std::make_shared<Window>(
+      160, 68, frame_buffer_config.pixel_format);
+  DrawWindow(*main_window->Writer(), "Hello Window");
+  WriteString(*main_window->Writer(), {24, 28}, "Welcome to", {0, 0, 0});
+  WriteString(*main_window->Writer(), {24, 44}, " Mikaons world!", {0, 0, 0});
+
   // FrameBufferインスタンスの生成
   FrameBuffer screen;
   if (auto err = screen.Initialize(frame_buffer_config)) {
@@ -408,9 +415,14 @@ extern "C" void KernelMainNewStack(
       .SetWindow(mouse_window)
       .Move({200, 200})
       .ID();
+  auto main_window_layer_id = layer_manager->NewLayer()
+    .SetWindow(main_window)
+    .Move({300, 100})
+    .ID();
   
   layer_manager->UpDown(bglayer_id, 0);
   layer_manager->UpDown(mouse_layer_id, 1);
+  layer_manager->UpDown(main_window_layer_id, 1);
   layer_manager->Draw();
 
   // キューにたまったイベントを処理するイベントループ
