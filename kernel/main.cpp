@@ -389,12 +389,14 @@ extern "C" void KernelMainNewStack(
   mouse_window->SetTransparentColor(kMouseTransparentColor);
   DrawMouseCursor(mouse_window->Writer(), {0,0});
 
-  // 小さな表示猟奇を生成して、ウィンドウの絵を描く
+  // メインウィンドウを作成
   auto main_window = std::make_shared<Window>(
-      160, 68, frame_buffer_config.pixel_format);
+      160, 52, frame_buffer_config.pixel_format);
   DrawWindow(*main_window->Writer(), "Hello Window");
-  WriteString(*main_window->Writer(), {24, 28}, "Welcome to", {0, 0, 0});
-  WriteString(*main_window->Writer(), {24, 44}, " Mikaons world!", {0, 0, 0});
+
+  // メインウィンドウに表示するカウンタ変数を初期化
+  char str[128];
+  unsigned int count =0;
 
   // FrameBufferインスタンスの生成
   FrameBuffer screen;
@@ -427,11 +429,19 @@ extern "C" void KernelMainNewStack(
 
   // キューにたまったイベントを処理するイベントループ
   while(true) {
+    // メインウィンドウに表示するカウンタ変数をインクリメント
+    ++count;
+    sprintf(str, "%010u", count);
+    FillRectangle(*main_window->Writer(), {24, 28}, {8 * 10, 16}, {0xc6, 0xc6, 0xc6});
+    WriteString(*main_window->Writer(), {24, 28}, str, {0, 0, 0});
+    layer_manager->Draw();
+
     // cliオペランドで割り込みを一時的に受け取らないようにする
     __asm__("cli");
     // イベントがキューに溜まっていない場合は、割り込みを受け取る状態にして停止させる
     if (main_queue.Count() == 0) {
-      __asm__("sti\n\thlt");
+      // __asm__("sti\n\thlt");  // カウンタ変数のインクリメントを走らせるため、hltしない
+      __asm__("sti");
       continue;
     }
 
