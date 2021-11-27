@@ -1,4 +1,5 @@
 #include "layer.hpp"
+#include "logger.hpp"
 
 /**
  * @fn
@@ -80,16 +81,32 @@ Layer& Layer::MoveRelative(Vector2D<int> pos_diff) {
 
 /**
  * @fn
+ * Layer::GetPositionメソッド
+ * 
+ * @brief
+ * レイヤーの原点座標を取得する。
+ * @return 原点座標
+ */
+Vector2D<int> Layer::GetPosition() const{
+  return pos_;
+}
+
+/**
+ * @fn
  * Layer::DrawToメソッド
  * 
  * @brief
  * writerに現在設定されているウィンドウの内容を描画する
  * 
- * @param [in] writer FrameBuffer
+ * @param [in] screen 描画するFrameBuffer
+ * @param [in] area 描画する範囲のRectangle
  */
-void Layer::DrawTo(FrameBuffer& screen) const {
+void Layer::DrawTo(FrameBuffer& screen, const Rectangle<int>& area) const {
   if (window_) {
-    window_->DrawTo(screen, pos_);
+    auto window_size = window_->Size();
+    // Log(kWarn, "WANA: pos_ = {%d ,%d}, window.size = {%d, %d}\n",
+    //     pos_.x, pos_.y, window_size.x, window_size.y);
+    window_->DrawTo(screen, pos_, area);
   }
 }
 
@@ -137,13 +154,21 @@ Layer* LayerManager::FindLayer(unsigned int id) {
  * LayerManager::Moveメソッド
  * 
  * @brief
- * レイヤーの位置情報をしていされた絶対座標へと更新する。再描画はしない
+ * レイヤーの位置情報をしていされた絶対座標へと更新して、再描画する
  * 
  * @param [in] id 移動するレイヤのID
  * @param [in] new_position 移動先の座標
  */
-void LayerManager::Move(unsigned int id, Vector2D<int> new_position) {
-  FindLayer(id)->Move(new_position);
+void LayerManager::Move(unsigned int id, Vector2D<int> new_pos) {
+  auto layer = FindLayer(id);
+  const auto window_size = layer->GetWindow()->Size();
+  const auto old_pos = layer->GetPosition();
+  layer->Move(new_pos);
+  // 移動元の再描画
+  // Log(kWarn, "WANA: old_pos = {%d, %d}, window_size = {%d, %d}\n", old_pos.x, old_pos.y, window_size.x, window_size.y);
+  Draw({old_pos, window_size});
+  // 移動先の再描画
+  Draw(id);
 }
 
 /**
@@ -151,13 +176,20 @@ void LayerManager::Move(unsigned int id, Vector2D<int> new_position) {
  * LayerManager::Moveメソッド
  * 
  * @brief
- * レイヤーの位置情報を指定された相対座標へと更新する。再描画はしない
+ * レイヤーの位置情報を指定された相対座標へと更新して、再描画する
  * 
  * @param [in] id 移動するレイヤのID
  * @param [in] pos_diff 移動量のベクトル
  */
 void LayerManager::MoveRelative(unsigned int id, Vector2D<int> pos_diff) {
-  FindLayer(id)->MoveRelative(pos_diff);
+  auto layer = FindLayer(id);
+  const auto window_size = layer->GetWindow()->Size();
+  const auto old_pos = layer->GetPosition();
+  layer->MoveRelative(pos_diff);
+  // 移動元の再描画
+  Draw({old_pos, window_size});
+  // 移動先の再描画
+  Draw(id);
 }
 
 /**
@@ -165,11 +197,38 @@ void LayerManager::MoveRelative(unsigned int id, Vector2D<int> pos_diff) {
  * LayerManager::Drawメソッド
  * 
  * @brief
- * 現在表示状態にあるレイヤーを描画する
+ * 現在表示状態にあるレイヤーのうち、引数で指定した範囲を再描画する
+ * @param [in] area 描画範囲。Rectangle<int>
  */
-void LayerManager::Draw() const {
+void LayerManager::Draw(const Rectangle<int>& area) const {
   for (auto layer : layer_stack_) {
-    layer->DrawTo(*screen_);
+    auto pos = layer->GetPosition();
+    // Log(kWarn, "WANA: Redraw layer id = %d, pos = {%d, %d}\n", layer->ID(), pos.x, pos.y);
+    layer->DrawTo(*screen_, area);
+  }
+}
+
+/**
+ * @fn
+ * LayerManager::Drawメソッド
+ * 
+ * @brief
+ * 現在表示状態にあるレイヤーのうち、引数で指定したIDのレイヤーと、
+ * その前面にあるレイヤーを再描画する。
+ * @param [in] id 再描画するレイヤーのID
+ */
+void LayerManager::Draw(unsigned int id) const {
+  bool draw = false;
+  Rectangle<int> window_area;
+  for (auto layer : layer_stack_) {
+    if (layer->ID() == id) {
+      window_area.size = layer->GetWindow()->Size();
+      window_area.pos = layer->GetPosition();
+      draw = true;
+    }
+    if (draw) {
+      layer->DrawTo(*screen_, window_area);
+    }
   }
 }
 
@@ -191,13 +250,14 @@ void LayerManager::Hide(unsigned int id) {
 
 /**
  * @fn
- * LayerManager::UpDownメソ度
+ * LayerManager::UpDownメソッド
  * 
  * @brief レイヤーの高さ方向の位置を指定された位置に移動する。
- * 
  * new_height に負の高さを指定するとレイヤーは非表示となり、
  * 0以上のを指定するとその高さとなる
  * 現在のレイヤー数以上の数値を指定した場合は、最前面のレイヤーとなる。
+ * @param [in] id レイヤーID
+ * @param [in] new_height 重なりの高さ
  */
 void LayerManager::UpDown(unsigned int id, int new_height) {
   // 高さにマイナスの値をいれたら、非表示にして終了

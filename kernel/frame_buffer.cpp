@@ -113,12 +113,14 @@ Error FrameBuffer::Initialize(const FrameBufferConfig& config) {
  * FrameBuffer::Copyメソッド
  * 
  * @brief
- * 指定されたバッファを自身のバッファにコピーする
+ * 指定されたバッファの指定された範囲を自身のバッファにコピーする
  * @param [in] dst_pos Vector2D<int>コピー先に描画するフレームバッファの左上の座標
  * @param [in] src コピー元のFrameBuffer
+ * @param [in, out] src_area コピー対象の範囲。この範囲部分のみをコピー元からコピー先へ更新する。
  * @return Errorコード。成功時はkkSuccessを返す。
  */
-Error FrameBuffer::Copy(Vector2D<int> dst_pos, const FrameBuffer& src) {
+Error FrameBuffer::Copy(Vector2D<int> dst_pos, const FrameBuffer& src,
+                        const Rectangle<int>& src_area) {
   if (config_.pixel_format != src.config_.pixel_format) {
     // コピー元のPixelFormatがコピー先と一致しない場合は、エラー
     return MAKE_ERROR(Error::kUnknownPixelFormat);
@@ -128,21 +130,24 @@ Error FrameBuffer::Copy(Vector2D<int> dst_pos, const FrameBuffer& src) {
   if (bytes_per_pixel <= 0) {
     return MAKE_ERROR(Error::kUnknownPixelFormat);
   }
-  const auto dst_size = FrameBufferSize(config_);
-  const auto src_size = FrameBufferSize(src.config_);
-
-  // 位置がはみ出たら、描画できるところまでをコピーする
-  const Vector2D<int> dst_start = ElementMax(dst_pos, {0, 0});
-  const Vector2D<int> dst_end = ElementMin(dst_pos + src_size, dst_size);
+  // src_areaの範囲のみをコピーするため、各範囲の重なった場所を探す
+  // コピー先の描画範囲 ここからコピー先／元のフレームバッファからはみ出た部分は除外する。
+  const Rectangle<int> src_area_shifted{dst_pos, src_area.size};
+  // コピー元のフレームバッファ内の全範囲
+  const Rectangle<int> src_outline{dst_pos - src_area.pos, FrameBufferSize(src.config_)};
+  // コピー先のフレームバッファ内の全範囲
+  const Rectangle<int> dst_outline{{0, 0}, FrameBufferSize(config_)};
+  // 上記3つの重なった部分がコピー先
+  const auto copy_area = dst_outline & src_outline & src_area_shifted;
+  const auto src_start_pos = copy_area.pos - (dst_pos - src_area.pos);
   
   //! コピー先のポインタ
-  uint8_t* dst_buf = FrameAddrAt(dst_start, config_);
+  uint8_t* dst_buf = FrameAddrAt(copy_area.pos, config_);
   //! コピー元のポインタ
-  const uint8_t* src_buf = FrameAddrAt({0, 0}, src.config_);
+  const uint8_t* src_buf = FrameAddrAt(src_start_pos, src.config_);
 
-  for (int y = dst_start.y; y < dst_end.y; ++y) {
-    // 1行ずつmemcpyでフレームバッファの中身をコピー
-    memcpy(dst_buf, src_buf, bytes_per_pixel * (dst_end.x - dst_start.x));
+  for (int y = 0; y < copy_area.size.y; ++y) {
+    memcpy(dst_buf, src_buf, bytes_per_pixel * copy_area.size.x);
     dst_buf += BytesPerScanLine(config_);
     src_buf += BytesPerScanLine(src.config_);
   }

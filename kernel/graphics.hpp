@@ -36,13 +36,28 @@ struct Vector2D {
     y += rhs.y;
     return *this;
   }
-};
 
-template <typename T, typename U>
-auto operator +(const Vector2D<T>& lhs, const Vector2D<U>& rhs)
-    -> Vector2D<decltype(lhs.x + rhs.x)> {
-  return {lhs.x + rhs.x, lhs.y + rhs.y};
-}
+  template <typename U>
+  Vector2D<T> operator +(const Vector2D<U>& rhs) const {
+    auto tmp = *this;
+    tmp += rhs;
+    return tmp;
+  }
+
+  template <typename U>
+  Vector2D<T>& operator -=(const Vector2D<U>& rhs) {
+    x -= rhs.x;
+    y -= rhs.y;
+    return *this;
+  }
+
+  template <typename U>
+  Vector2D<T> operator -(const Vector2D<U>& rhs) const {
+    auto tmp = *this;
+    tmp -= rhs;
+    return tmp;
+  }
+};
 
 /**
  * @fn
@@ -79,7 +94,7 @@ Vector2D<T> ElementMin(const Vector2D<T>& lhs, const Vector2D<T>& rhs) {
  * Rectangle構造体
  * 
  * @brief
- * 長方形を表すVector2D
+ * 矩形を表すVector2D
  * pos: 左上の座標を示すVector2D
  * size: 幅、高さを示すVector2D
  */
@@ -87,6 +102,24 @@ template <typename T>
 struct Rectangle {
   Vector2D<T> pos, size;
 };
+
+/**
+ * Rectangle(矩形)同士の重なり部分を「&」演算子で抽出する
+ */
+template <typename T, typename U>
+Rectangle<T> operator&(const Rectangle<T> lhs, const Rectangle<U>& rhs) {
+  const auto lhs_end = lhs.pos + lhs.size;
+  const auto rhs_end = rhs.pos + rhs.size;
+  if (lhs_end.x < rhs.pos.x || lhs_end.y < rhs.pos.y ||
+      rhs_end.x < lhs.pos.x || rhs_end.y < lhs.pos.y) {
+    // 重なっていないときは、pos = {0, 0}, size = {0, 0}を返す
+    return {{0, 0}, {0, 0}};
+  }
+
+  auto new_pos = ElementMax(lhs.pos, rhs.pos);
+  auto new_size = ElementMin(lhs_end, rhs_end) - new_pos;
+  return {new_pos, new_size};
+}
 
 /**
  * @class

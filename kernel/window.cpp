@@ -39,12 +39,16 @@ Window::Window(int width, int height, PixelFormat shadow_format) : width_{width}
  * 与えられた PixelWriter にこのウィンドウの表示領域を描画させる。
  * 
  * @param [in] dst  描画先
- * @param [in, out] position writer の左上を基準とした描画位置
+ * @param [in, out] pos フレームバッファの左上を基準とした描画位置
+ * @param [in] area 描画範囲のRectangle。これもフレームバッファの左上を基準にした座標のため注意
  */
-void Window::DrawTo(FrameBuffer& dst, Vector2D<int> position) {
+void Window::DrawTo(FrameBuffer& dst, Vector2D<int> pos, const Rectangle<int>& area) {
   // 透過色の設定がない場合は、そのまま長方形を埋める
   if (!transparent_color_) {
-    dst.Copy(position, shadow_buffer_);
+    Rectangle<int> window_area{pos, Size()};
+    // 自身のウィンドウ範囲と引数で指定した範囲のうち、重なる部分のみを描画する。
+    Rectangle<int> intersection = area & window_area;
+    dst.Copy(intersection.pos, shadow_buffer_, {intersection.pos - pos, intersection.size});
     return;
   }
 
@@ -52,15 +56,15 @@ void Window::DrawTo(FrameBuffer& dst, Vector2D<int> position) {
   const auto tc = transparent_color_.value();
   auto& writer = dst.Writer();
   // 移動先の位置がPixelWriterの最大長をこえる場合は、そこまでで打ち切る
-  for (int y = std::max(0, 0 - position.y);
-       y < std::min(Height(), writer.Height() - position.y);
+  for (int y = std::max(0, 0 - pos.y);
+       y < std::min(Height(), writer.Height() - pos.y);
        ++y) {
-    for (int x = std::max(0, 0 - position.x);
-         x < std::min(Width(), writer.Width() - position.x);
+    for (int x = std::max(0, 0 - pos.x);
+         x < std::min(Width(), writer.Width() - pos.x);
          ++x) {
       const auto c = At(Vector2D<int>{x, y});
       if (c != tc) {
-        writer.Write(position + Vector2D<int>{x, y}, c);
+        writer.Write(pos + Vector2D<int>{x, y}, c);
       }
     }
   }
@@ -145,6 +149,19 @@ void Window::Move(Vector2D<int> dst_pos, const Rectangle<int>& src) {
  */
 int Window::Width() const {
   return width_;
+}
+
+/**
+ * @fn
+ * Window::Sizeメソッド
+ * 
+ * @brief
+ * 平面描画領域の大きさをVector2Dで返す
+ * 
+ * @return Vector2D{横幅, 高さ}
+ */
+Vector2D<int> Window::Size() const {
+  return {width_, height_};
 }
 
 /**

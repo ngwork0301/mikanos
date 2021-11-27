@@ -23,7 +23,7 @@
 Console::Console(
     const PixelColor& fg_color, const PixelColor& bg_color)
     : fg_color_(fg_color), bg_color_(bg_color),
-      buffer_{}, cursor_row_{0}, cursor_column_{0} {
+      buffer_{}, cursor_row_{0}, cursor_column_{0}, layer_id_{0} {
 }
 
 /**
@@ -50,7 +50,8 @@ void Console::PutString(const char* s){
     ++s;
   }
   if (layer_manager) {
-    layer_manager->Draw();
+    // レイヤーマネージャがいれば、自身のレイヤーのみ再描画する
+    layer_manager->Draw(layer_id_);
   }
 }
 
@@ -131,12 +132,39 @@ void Console::SetWindow(const std::shared_ptr<Window>& window) {
 
 /**
  * @fn
+ * Console::SetLayerIDメソッド
+ * 
+ * @brief
+ * 描画するレイヤーIDをセットする
+ * @param [in] layer_id レイヤーID
+ */
+void Console::SetLayerID(unsigned int layer_id) {
+  layer_id_ = layer_id;
+}
+
+/**
+ * @fn
+ * Console::LayerIDメソッド
+ * 
+ * @brief
+ * メンバ変数に設定された自身コンソールを描画するレイヤーIDを取得する
+ * @return layer_id (unsigned int) レイヤーID
+ */
+unsigned int Console::LayerID() const {
+  return layer_id_;
+}
+
+
+/**
+ * @fn
  * Console::Refreshメソッド
  * 
  * @brief
  * バッファを元に描画する
  */
 void Console::Refresh() {
+  // 再描画時の文字列変更のため、一旦描画領域を背景色で埋める。
+  FillRectangle(*writer_, {0, 0}, {8 * kColumns, 16 * kRows}, bg_color_);
   for (int row = 0; row < kRows; ++row) {
     WriteString(*writer_, Vector2D<int>{0, 16 * row}, buffer_[row], fg_color_);
   }

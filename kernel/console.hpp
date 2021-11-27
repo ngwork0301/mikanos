@@ -20,6 +20,8 @@ class Console {
     void PutString(const char* s);
     void SetWriter(PixelWriter* writer);
     void SetWindow(const std::shared_ptr<Window>& window);
+    void SetLayerID(unsigned int layer_id);
+    unsigned int LayerID() const;
 
   private:
     void Newline();
@@ -33,4 +35,6 @@ class Console {
     char buffer_[kRows][kColumns + 1];
     //! カーソル位置
     int cursor_row_, cursor_column_;
+    //! 描画するコンソールのレイヤーID
+    unsigned int layer_id_;
 };
