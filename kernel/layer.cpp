@@ -202,10 +202,11 @@ void LayerManager::MoveRelative(unsigned int id, Vector2D<int> pos_diff) {
  */
 void LayerManager::Draw(const Rectangle<int>& area) const {
   for (auto layer : layer_stack_) {
-    auto pos = layer->GetPosition();
-    // Log(kWarn, "WANA: Redraw layer id = %d, pos = {%d, %d}\n", layer->ID(), pos.x, pos.y);
-    layer->DrawTo(*screen_, area);
+    // まずバックバッファに描画
+    layer->DrawTo(back_buffer_, area);
   }
+  // バックバッファを一気にフレームバッファに反映
+  screen_->Copy(area.pos, back_buffer_, area);
 }
 
 /**
@@ -227,9 +228,12 @@ void LayerManager::Draw(unsigned int id) const {
       draw = true;
     }
     if (draw) {
-      layer->DrawTo(*screen_, window_area);
+      // まずはバックバッファに描画
+      layer->DrawTo(back_buffer_, window_area);
     }
   }
+  // バックバッファを一気にフレームバッファに反映
+  screen_->Copy(window_area.pos, back_buffer_, window_area);
 }
 
 /**
@@ -300,4 +304,10 @@ void LayerManager::UpDown(unsigned int id, int new_height) {
  */
 void LayerManager::SetWriter(FrameBuffer* screen) {
   screen_ = screen;
+
+  // バックバッファを初期化
+  FrameBufferConfig back_config = screen->Config();
+  back_config.frame_buffer = nullptr;
+  back_buffer_.Initialize(back_config);
 }
+

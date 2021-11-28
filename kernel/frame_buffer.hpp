@@ -39,6 +39,16 @@ class FrameBuffer {
      */
     FrameBufferWriter& Writer() { return *writer_; };
 
+    /**
+     * @fn
+     * Configメソッド
+     * 
+     * @brief
+     * getterメソッド。FrameBufferConfigインスタンスを返す
+     * @return このフレームバッファが使用するFrameBufferConfigインスタンス
+     */
+    FrameBufferConfig Config() { return config_; };
+
   private:
     //! 描画領域の縦横サイズ、ピクセルのデータ形式などの構成情報
     FrameBufferConfig config_{};

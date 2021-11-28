@@ -69,6 +69,8 @@ class LayerManager {
   private:
     //! フレームバッファ
     FrameBuffer* screen_{nullptr};
+    //! 先にバックバッファに描画処理して、一気にフレームバッファに転送
+    mutable FrameBuffer back_buffer_{};
     //! 生成したレイヤーを生成した順にいれるためのベクトル
     std::vector<std::unique_ptr<Layer>> layers_{};
     //! レイヤーの重なりをいれるベクトル（先頭が最背面、末尾を最前面）
