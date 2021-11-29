@@ -173,7 +173,7 @@ void LayerManager::Move(unsigned int id, Vector2D<int> new_pos) {
 
 /**
  * @fn
- * LayerManager::Moveメソッド
+ * LayerManager::MoveRelativeメソッド
  * 
  * @brief
  * レイヤーの位置情報を指定された相対座標へと更新して、再描画する
@@ -311,3 +311,36 @@ void LayerManager::SetWriter(FrameBuffer* screen) {
   back_buffer_.Initialize(back_config);
 }
 
+/**
+ * @fn
+ * LayerManager::FindLayerByPositionメソッド
+ * 
+ * @brief
+ * 指定した座標にある最前面レイヤーを探す
+ * @param [in] pos 取得したいレイヤーのある位置 Vector2D<int>
+ * @param [in] exclude_id 対象外にするレイヤーのID
+ */
+ Layer* LayerManager::FindLayerByPosition(Vector2D<int> pos, unsigned int exclude_id) const {
+  auto pred = [pos, exclude_id](Layer* layer) {
+    if (layer->ID() == exclude_id) {
+      return false;
+    }
+    const auto& win = layer->GetWindow();
+    if (!win) {
+      return false;
+    }
+    const auto win_pos = layer->GetPosition();
+    const auto win_end_pos = win_pos + win->Size();
+    // 指定された範囲がこのレイヤーのウィンドウ内であればtrueを返す
+    return win_pos.x <= pos.x && pos.x < win_end_pos.x &&
+           win_pos.y <= pos.y && pos.y < win_end_pos.y;
+  };
+  // レイヤースタックの逆順に対象のレイヤーを探す
+  auto it = std::find_if(layer_stack_.rbegin(), layer_stack_.rend(), pred);
+  if (it == layer_stack_.rend()) {
+    // 一番下のレイヤーが該当した場合は、移動させたくないため、対象外とする。
+    return nullptr;
+  }
+  return *it;
+ }
+ 

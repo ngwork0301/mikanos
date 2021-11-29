@@ -162,16 +162,48 @@ void SwitchEhci2Xhci(const pci::Device& xhc_dev) {
  * 
  * @brief
  * マウスのオブザーバーオブジェクトを生成してmouse_cursorに設定する
+ * @param [in] buttons クリックの有無
  * @param [in] x X座標の移動量
  * @param [in] y Y座標の移動量
  */
-void MouseObserver(int8_t displacement_x, int8_t displacement_y) {
+void MouseObserver(uint8_t buttons, int8_t displacement_x, int8_t displacement_y) {
+  static unsigned int mouse_drag_layer_id = 0;
+  static uint8_t previous_buttons = 0;
+
+  const auto oldpos = mouse_position;
   auto newpos = mouse_position + Vector2D<int>{displacement_x, displacement_y};
   // 画面からはみ出る場合は、はみ出ないギリギリに位置に置き換え
   newpos = ElementMin(newpos, screen_size + Vector2D<int>{-1, -1});
   mouse_position = ElementMax(newpos, {0,0});
 
+  // 移動ベクトルを算出
+  const auto posdiff = mouse_position - oldpos;
+
+  // マウスの再描画
   layer_manager->Move(mouse_layer_id, mouse_position);
+
+  // マウスドラッグ処理
+  //! 既にマウスの左クリックをしていたかどうか
+  const bool previous_left_pressed = (previous_buttons & 0x01);
+  const bool left_pressed = (buttons & 0x01);
+  if (!previous_left_pressed && left_pressed) {
+    // 新たに左クリックされたとき、移動対象のレイヤーを取得
+    auto layer = layer_manager->FindLayerByPosition(mouse_position, mouse_layer_id);
+    if (layer) {
+      mouse_drag_layer_id = layer->ID();
+    }
+  } else if (previous_left_pressed && left_pressed) {
+    // 既に左クリックしてあって、まだ押し続けている場合は、対象のレイヤーを移動
+    if (mouse_drag_layer_id > 0) {
+      layer_manager->MoveRelative(mouse_drag_layer_id, posdiff);
+    }
+  } else if (previous_left_pressed && !left_pressed) {
+    // 既に左クリックしてあって、今回離したとき。移動対象のレイヤーをクリアする
+    mouse_drag_layer_id = 0;
+  }
+
+  // 再入時のために既存のボタン変数をいれておく。
+  previous_buttons = buttons;
 }
 
 /**
