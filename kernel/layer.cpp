@@ -103,11 +103,34 @@ Vector2D<int> Layer::GetPosition() const{
  */
 void Layer::DrawTo(FrameBuffer& screen, const Rectangle<int>& area) const {
   if (window_) {
-    auto window_size = window_->Size();
-    // Log(kWarn, "WANA: pos_ = {%d ,%d}, window.size = {%d, %d}\n",
-    //     pos_.x, pos_.y, window_size.x, window_size.y);
     window_->DrawTo(screen, pos_, area);
   }
+}
+
+/**
+ * @fn
+ * Layer::SetDraggableメソッド
+ * 
+ * @brief
+ * このレイヤーに移動可能フラグをセットする
+ * @param [in] draggable 移動可能かどうか
+ * @return Layerインスタンス
+ */
+Layer& Layer::SetDraggable(bool draggable){
+  draggable_ = draggable;
+  return *this;
+}
+
+/**
+ * @fn
+ * Layer::IsDraggableメソッド
+ * 
+ * @brief
+ * このレイヤーが移動可能かどうかを返却
+ * @return bool 移動可能かどうか
+ */
+bool Layer::IsDraggable() const{
+  return draggable_;
 }
 
 /**

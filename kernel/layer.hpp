@@ -36,13 +36,18 @@ class Layer {
     Vector2D<int> GetPosition() const;
     void DrawTo(FrameBuffer& screen, const Rectangle<int>& area) const;
 
+    Layer& SetDraggable(bool draggable);
+    bool IsDraggable() const;
+
   private:
     //! 識別ID
     unsigned int id_;
     //! 原点座標
-    Vector2D<int> pos_;
+    Vector2D<int> pos_{};
     //! ウィンドウへのスマートポインタ
-    std::shared_ptr<Window> window_;
+    std::shared_ptr<Window> window_{};
+    //! 移動可能なウィンドウか
+    bool draggable_{false};
 };
 
 /**
