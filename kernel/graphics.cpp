@@ -124,3 +124,21 @@ void DrawDesktop(PixelWriter& writer) {
                 {30, 30},
                 {160, 160, 160});
 }
+
+//! 画面の設定をグローバル変数として参照できるようにする。
+FrameBufferConfig screen_config;
+
+/**
+ * @fn
+ * ScreenSize関数
+ * 
+ * @brief
+ * 画面のサイズを取得する。
+ * @return Vector2D<int> 水平サイズ、垂直サイズ
+ */
+Vector2D<int> ScreenSize() {
+  return {
+    static_cast<int>(screen_config.horizontal_resolution),
+    static_cast<int>(screen_config.vertical_resolution)
+  };
+}
