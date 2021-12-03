@@ -38,3 +38,7 @@ class Console {
     //! 描画するコンソールのレイヤーID
     unsigned int layer_id_;
 };
+
+extern Console* console;
+
+void InitializeConsole();

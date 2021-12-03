@@ -63,9 +63,6 @@ extern "C" void __cxa_pure_virtual() { while (1); }
 /**
  * グローバル変数
  */
-//! コンソールクラスのインスタンス生成用バッファ
-char console_buf[sizeof(Console)];
-Console* console;
 //! xHCI用ホストコントローラ
 usb::xhci::Controller* xhc;
 //! MSI割り込みイベント処理につかうキュー
@@ -131,20 +128,12 @@ extern "C" void KernelMainNewStack(
     const MemoryMap& memory_map_ref) {
 
   // 新しいメモリ領域へ移動
-  screen_config = frame_buffer_config_ref;
   MemoryMap memory_map{memory_map_ref};
 
-  // ピクセルフォーマットを判定して、対応するPixelWriterインスタンスを生成
-  PixelWriter* pixel_writer = MakeScreenWriter();
-  
-  // 背景の描画処理
-  DrawDesktop(*pixel_writer);
-
+  // 画面の初期化
+  InitializeGraphics(frame_buffer_config_ref);
   // コンソールを描画
-  console = new(console_buf) Console{
-    kDesktopFGColor, kDesktopBGColor
-  };
-  console->SetWriter(pixel_writer);
+  InitializeConsole();
   printk("Welcome to MikanOS!\n");
 
   // ログレベルの設定

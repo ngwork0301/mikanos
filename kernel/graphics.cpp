@@ -127,6 +127,7 @@ void DrawDesktop(PixelWriter& writer) {
 
 //! 画面の設定をグローバル変数として参照できるようにする。
 FrameBufferConfig screen_config;
+PixelWriter* screen_writer;
 
 /**
  * @fn
@@ -149,19 +150,26 @@ namespace {
 
 /**
  * @fn
- * MakeScreenWriter関数
+ * InitializeGraphics関数
  * 
  * @brief
- * 画面の描画に使う基底PixelWriterのインスタンスを生成して返す。
- * @return PixelWriterインスタンス
+ * 画面の描画に使う基底PixelWriterのインスタンスを生成し、画面の初期化をおこなう
  */
-PixelWriter* MakeScreenWriter() {
+void InitializeGraphics(const FrameBufferConfig& screen_config) {
+  ::screen_config = screen_config;
   switch (screen_config.pixel_format) {
     case kPixelRGBResv8BitPerColor:
-      return new(pixel_writer_buf) RGBResv8BitPerColorPixelWriter{screen_config};
+      ::screen_writer = new(pixel_writer_buf)
+        RGBResv8BitPerColorPixelWriter{screen_config};
+      break;
     case kPixelBGRResv8BitPerColor:
-      return new(pixel_writer_buf) BGRResv8BitPerColorPixelWriter{screen_config};
+      ::screen_writer = new(pixel_writer_buf)
+        BGRResv8BitPerColorPixelWriter{screen_config};
+      break;
+    default:
+      // 画面が非対応のPixelFormatだったら、現時点では即時終了
+      exit(1);
   }
-  // 画面が非対応のPixelFormatだったら、現時点では即時終了
-  exit(1);
+  // 画面の初期化
+  DrawDesktop(*screen_writer);
 }
