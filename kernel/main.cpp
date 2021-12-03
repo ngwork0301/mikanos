@@ -63,9 +63,6 @@ extern "C" void __cxa_pure_virtual() { while (1); }
 /**
  * グローバル変数
  */
-//! PixelWriterのインスタンス生成用バッファ
-char pixel_writer_buf[sizeof(RGBResv8BitPerColorPixelWriter)];
-PixelWriter* pixel_writer;
 //! コンソールクラスのインスタンス生成用バッファ
 char console_buf[sizeof(Console)];
 Console* console;
@@ -141,16 +138,7 @@ extern "C" void KernelMainNewStack(
   MemoryMap memory_map{memory_map_ref};
 
   // ピクセルフォーマットを判定して、対応するPixelWriterインスタンスを生成
-  switch (screen_config.pixel_format) {
-    case kPixelRGBResv8BitPerColor:
-      pixel_writer = new(pixel_writer_buf)
-        RGBResv8BitPerColorPixelWriter{screen_config};
-      break;
-    case kPixelBGRResv8BitPerColor:
-      pixel_writer = new(pixel_writer_buf)
-        BGRResv8BitPerColorPixelWriter{screen_config};
-      break;
-  }
+  PixelWriter* pixel_writer = MakeScreenWriter();
   
   // 背景の描画処理
   DrawDesktop(*pixel_writer);

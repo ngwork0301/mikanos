@@ -142,3 +142,26 @@ Vector2D<int> ScreenSize() {
     static_cast<int>(screen_config.vertical_resolution)
   };
 }
+
+namespace {
+  char pixel_writer_buf[sizeof(RGBResv8BitPerColorPixelWriter)];
+}
+
+/**
+ * @fn
+ * MakeScreenWriter関数
+ * 
+ * @brief
+ * 画面の描画に使う基底PixelWriterのインスタンスを生成して返す。
+ * @return PixelWriterインスタンス
+ */
+PixelWriter* MakeScreenWriter() {
+  switch (screen_config.pixel_format) {
+    case kPixelRGBResv8BitPerColor:
+      return new(pixel_writer_buf) RGBResv8BitPerColorPixelWriter{screen_config};
+    case kPixelBGRResv8BitPerColor:
+      return new(pixel_writer_buf) BGRResv8BitPerColorPixelWriter{screen_config};
+  }
+  // 画面が非対応のPixelFormatだったら、現時点では即時終了
+  exit(1);
+}
