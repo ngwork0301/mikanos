@@ -1,3 +1,4 @@
+#include "logger.hpp"
 #include "memory_manager.hpp"
 
 /**
@@ -134,23 +135,91 @@ void BitmapMemoryManager::SetBit(FrameID frame, bool allocated) {
 
 extern "C" caddr_t program_break, program_break_end;
 
+namespace {
+  char memory_manager_buf[sizeof(BitmapMemoryManager)];
+  BitmapMemoryManager* memory_manager;
+
+  /**
+   * @fn
+   * InitializeHeap関数
+   * 
+   * @brief
+   * プログラムブレークの初期化をおこなう
+   * 
+   * @param [in] memory_manager BitmapMemoryManagerのインスタンス
+   */
+  Error InitializeHeap(BitmapMemoryManager& memory_manager) {
+    const int kHeapFrames = 64 * 512;
+    const auto heap_start = memory_manager.Allocate(kHeapFrames);
+    if (heap_start.error) {
+      return heap_start.error;
+    }
+
+    program_break = reinterpret_cast<caddr_t>(heap_start.value.ID() * kBytesPerFrame);
+    program_break_end = program_break + kHeapFrames * kBytesPerFrame;
+    return MAKE_ERROR(Error::kSuccess);
+  }
+}
+
 /**
  * @fn
- * InitializeHeap関数
+ * InitializeMemoryManager関数
  * 
  * @brief
- * プログラムブレークの初期化をおこなう
- * 
- * @param [in] memory_manager BitmapMemoryManagerのインスタンス
+ * 引数で与えられたメモリマップから、MemoryManagerインスタンスを生成する
+ * @param [in] memory_map メモリマップ
  */
-Error InitializeHeap(BitmapMemoryManager& memory_manager) {
-  const int kHeapFrames = 64 * 512;
-  const auto heap_start = memory_manager.Allocate(kHeapFrames);
-  if (heap_start.error) {
-    return heap_start.error;
-  }
+void InitializeMemoryManager(const MemoryMap& memory_map){
+  ::memory_manager = new(memory_manager_buf) BitmapMemoryManager;
 
-  program_break = reinterpret_cast<caddr_t>(heap_start.value.ID() * kBytesPerFrame);
-  program_break_end = program_break + kHeapFrames * kBytesPerFrame;
-  return MAKE_ERROR(Error::kSuccess);
+  // 取得したメモリマップの情報を出力する
+  // printk("memory_map: %p\n", &memory_map);
+  const auto memory_map_base = reinterpret_cast<uintptr_t>(memory_map.buffer);
+  uintptr_t available_end = 0;
+  for (uintptr_t iter = memory_map_base;
+      iter < memory_map_base + memory_map.map_size;
+      iter += memory_map.descriptor_size) {
+    // MemoryDescriptorごとに取り出し
+    auto desc = reinterpret_cast<MemoryDescriptor*>(iter);
+
+    // 未使用領域が物理メモリのスタート位置より小さい場合（＝最初の領域）は、使用中領域
+    if (available_end < desc->physical_start) {
+      // メモリ管理に使用中領域にすることを知らせる
+      memory_manager->MarkAllocated(
+          FrameID{available_end / kBytesPerFrame},
+          (desc->physical_start - available_end) / kBytesPerFrame);
+    }
+    // ディスクリプタが持つ、物理メモリで使用できる最後のアドレスを計算
+    const auto physical_end =
+      desc->physical_start + desc->number_of_pages * kUEFIPageSize;
+    if (IsAvailable(static_cast<MemoryType>(desc->type))) {
+      // 未使用領域の場合
+      // 未使用領域と物理領域を一致させる
+      available_end = physical_end;
+
+      // MemoryTypeごとに物理メモリアドレスやサイズ、ページ数、属性を出力
+      // printk("type = %u, phys = %08lx - %08lx, pages = %lu, attr = %08lx\n",
+      //        desc->type,
+      //        desc->physical_start,
+      //        desc->physical_start + desc->number_of_pages * 4096 -1,
+      //        desc->number_of_pages,
+      //        desc->attribute);
+
+    } else {
+      // 使用中領域の場合
+      // メモリ管理に使用中領域にすることを知らせる
+      memory_manager->MarkAllocated(
+          FrameID{desc->physical_start / kBytesPerFrame},
+          desc->number_of_pages * kUEFIPageSize / kBytesPerFrame);
+    }
+  }
+  // メモリ管理に大きさを設定する。
+  memory_manager->SetMemoryRange(FrameID{1}, FrameID{available_end / kBytesPerFrame});
+
+  // mallocでつかうヒープ領域の初期化
+  if (auto err = InitializeHeap(*memory_manager)) {
+    Log(kError, "failed to allocate pages: %s at %s:%d\n",
+        err.Name(), err.File(), err.Line());
+    exit(1);
+  }
 }

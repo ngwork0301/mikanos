@@ -70,9 +70,6 @@ Console* console;
 usb::xhci::Controller* xhc;
 //! MSI割り込みイベント処理につかうキュー
 ArrayQueue<Message>* main_queue;
-//! BitmapMemoryManagerのインスタンス生成用バッファ
-char memory_manager_buf[sizeof(BitmapMemoryManager)];
-BitmapMemoryManager* memory_manager;
 //! レイヤーマネージャ
 LayerManager* layer_manager;
 
@@ -163,59 +160,8 @@ extern "C" void KernelMainNewStack(
   // ページジングの設定
   SetupIdentityPageTable();
 
-  // メモリ管理の初期化処理
-  ::memory_manager = new(memory_manager_buf) BitmapMemoryManager;
-
-  // 取得したメモリマップの情報を出力する
-  // printk("memory_map: %p\n", &memory_map);
-  const auto memory_map_base = reinterpret_cast<uintptr_t>(memory_map.buffer);
-  uintptr_t available_end = 0;
-  for (uintptr_t iter = memory_map_base;
-       iter < memory_map_base + memory_map.map_size;
-       iter += memory_map.descriptor_size) {
-    // MemoryDescriptorごとに取り出し
-    auto desc = reinterpret_cast<MemoryDescriptor*>(iter);
-
-    // 未使用領域が物理メモリのスタート位置より小さい場合（＝最初の領域）は、使用中領域
-    if (available_end < desc->physical_start) {
-      // メモリ管理に使用中領域にすることを知らせる
-      memory_manager->MarkAllocated(
-          FrameID{available_end / kBytesPerFrame},
-          (desc->physical_start - available_end) / kBytesPerFrame);
-    }
-    // ディスクリプタが持つ、物理メモリで使用できる最後のアドレスを計算
-    const auto physical_end =
-      desc->physical_start + desc->number_of_pages * kUEFIPageSize;
-    if (IsAvailable(static_cast<MemoryType>(desc->type))) {
-      // 未使用領域の場合
-      // 未使用領域と物理領域を一致させる
-      available_end = physical_end;
-
-      // MemoryTypeごとに物理メモリアドレスやサイズ、ページ数、属性を出力
-      // printk("type = %u, phys = %08lx - %08lx, pages = %lu, attr = %08lx\n",
-      //        desc->type,
-      //        desc->physical_start,
-      //        desc->physical_start + desc->number_of_pages * 4096 -1,
-      //        desc->number_of_pages,
-      //        desc->attribute);
-
-    } else {
-      // 使用中領域の場合
-      // メモリ管理に使用中領域にすることを知らせる
-      memory_manager->MarkAllocated(
-          FrameID{desc->physical_start / kBytesPerFrame},
-          desc->number_of_pages * kUEFIPageSize / kBytesPerFrame);
-    }
-  }
-  // メモリ管理に大きさを設定する。
-  memory_manager->SetMemoryRange(FrameID{1}, FrameID{available_end / kBytesPerFrame});
-
-  // mallocでつかうヒープ領域の初期化
-  if (auto err = InitializeHeap(*memory_manager)) {
-    Log(kError, "failed to allocate pages: %s at %s:%d\n",
-        err.Name(), err.File(), err.Line());
-    exit(1);
-  }
+  // メモリ管理の初期化
+  InitializeMemoryManager(memory_map);
 
   // イベント処理のためのメインキューのインスタンス化
   std::array<Message, 32> main_queue_data;
