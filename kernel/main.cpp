@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdio>
 
+#include <deque>
 #include <numeric>
 #include <vector>
 
@@ -66,7 +67,7 @@ extern "C" void __cxa_pure_virtual() { while (1); }
 //! xHCI用ホストコントローラ
 usb::xhci::Controller* xhc;
 //! MSI割り込みイベント処理につかうキュー
-ArrayQueue<Message>* main_queue;
+std::deque<Message>* main_queue;
 //! レイヤーマネージャ
 LayerManager* layer_manager;
 
@@ -105,7 +106,7 @@ int printk(const char* format, ...) {
 __attribute__((interrupt))
 void IntHandlerXHCI(InterruptFrame* frame) {
   // イベントをキューに溜める
-  main_queue->Push(Message{Message::kInterrunptXHCI});
+  main_queue->push_back(Message{Message::kInterrunptXHCI});
   // 割り込み処理が終わったことを通知
   NotifyEndOfInterrupt();
 }
@@ -148,9 +149,7 @@ extern "C" void KernelMainNewStack(
   InitializeMemoryManager(memory_map);
 
   // イベント処理のためのメインキューのインスタンス化
-  std::array<Message, 32> main_queue_data;
-  ArrayQueue<Message> main_queue{main_queue_data};
-  ::main_queue = &main_queue;
+  ::main_queue = new std::deque<Message>(32);
 
   // PCIデバイスを列挙する
   auto err = pci::ScanAllBus();
@@ -245,15 +244,15 @@ extern "C" void KernelMainNewStack(
     // cliオペランドで割り込みを一時的に受け取らないようにする
     __asm__("cli");
     // イベントがキューに溜まっていない場合は、割り込みを受け取る状態にして停止させる
-    if (main_queue.Count() == 0) {
+    if (main_queue->size() == 0) {
       // __asm__("sti\n\thlt");  // カウンタ変数のインクリメントを走らせるため、hltしない
       __asm__("sti");
       continue;
     }
 
     // キューからメッセージを１つ取り出し
-    Message msg = main_queue.Front();
-    main_queue.Pop();
+    Message msg = main_queue->front();
+    main_queue->pop_front();
     // MSI割り込み受け付けを再開
     __asm__("sti");
 
