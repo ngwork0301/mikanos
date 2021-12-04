@@ -78,3 +78,19 @@ void SetupSegments() {
   // 作成したGDTをCPUに登録(既存のGDTは破棄する)
   LoadGDT(sizeof(gdt) - 1, reinterpret_cast<uintptr_t>(&gdt[0]));
 }
+
+/**
+ * @fn
+ * InitializeSegmentation関数
+ * 
+ * @brief
+ * GDT(Global Descriptor table)の構築・ロードと、DS、CS、SSレジスタの設定をおこなう。
+ */
+void InitializeSegmentation() {
+  // GDT(Global Descriptor table)の構築・ロード
+  SetupSegments();
+
+  // 再構築したGDTをCPUのセグメントレジスタに反映
+  SetDSAll(kKernelDS);
+  SetCSSS(kKernelCS, kKernelSS);
+}

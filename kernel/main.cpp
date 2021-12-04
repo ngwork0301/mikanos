@@ -139,15 +139,10 @@ extern "C" void KernelMainNewStack(
   // ログレベルの設定
   SetLogLevel(kWarn);
 
-  // セグメンテーションの設定のためGDT(Global Descriptor Table)を再構築する
-  SetupSegments();
-  // 再構築したGDTをCPUのセグメントレジスタに反映
-  const uint16_t kernel_cs = 1 << 3;
-  const uint64_t kernel_ss = 2 << 3;
-  SetDSAll(0);
-  SetCSSS(kernel_cs, kernel_ss);
+  // セグメンテーションの設定
+  InitializeSegmentation();
   // ページジングの設定
-  SetupIdentityPageTable();
+  InitializePaging();
 
   // メモリ管理の初期化
   InitializeMemoryManager(memory_map);
@@ -172,7 +167,7 @@ extern "C" void KernelMainNewStack(
   // 割り込み記述子IDTを設定
   // DPLは0固定で設定
   SetIDTEntry(idt[InterruptVector::kXHCI], MakeIDTAttr(DescriptorType::kInterruptGate, 0),
-              reinterpret_cast<uint64_t>(IntHandlerXHCI), kernel_cs);
+              reinterpret_cast<uint64_t>(IntHandlerXHCI), kKernelCS);
   LoadIDT(sizeof(idt) - 1, reinterpret_cast<uintptr_t>(&idt[0]));
 
   // マウスデバイスを探し出してxhcへの共有ポインタを取得

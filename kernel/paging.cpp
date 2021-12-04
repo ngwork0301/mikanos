@@ -39,3 +39,14 @@ void SetupIdentityPageTable() {
   // PML4（ページマップレベル4テーブル）の物理アドレスをCR3レジスタに設定
   SetCR3(reinterpret_cast<uint64_t>(&pml4_table[0]));
 }
+
+/**
+ * @fn
+ * InitializePaging関数
+ * 
+ * @brief
+ * SetupIdentityPageTable関数のラッパー
+ */
+void InitializePaging() {
+  SetupIdentityPageTable();
+}
