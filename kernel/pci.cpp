@@ -1,6 +1,7 @@
 #include "pci.hpp"
 
 #include "asmfunc.h"
+#include "logger.hpp"
 
 namespace pci{
   /**
@@ -544,4 +545,27 @@ namespace pci{
     return ConfigureMSI(dev, msg_addr, msg_data, num_vector_exponent);
   }
 
+}
+
+/**
+ * @fn
+ * InitializePCI関数
+ * 
+ * @brief
+ * 接続中PCIバスをすべてスキャンして、メモリにロードする。
+ */
+void InitializePCI() {
+  // PCIデバイスを列挙する
+  if (auto err = pci::ScanAllBus()) {
+    Log(kDebug, "ScanAllBus: %s\n", err.Name());
+    exit(1);
+  }
+  for (int i = 0; i < pci::num_device; ++i) {
+    const auto& dev = pci::devices[i];
+    auto vendor_id = pci::ReadVendorId(dev.bus, dev.device, dev.function);
+    auto class_code = pci::ReadClassCode(dev.bus, dev.device, dev.function);
+    Log(kDebug, "%d.%d.%d: vend %04d, class(base) %d, class(sub) %d, class(interface) %d, head %02x\n",
+          dev.bus, dev.device, dev.function,
+          vendor_id, class_code.base, class_code.sub, class_code.interface, dev.header_type);
+  }
 }

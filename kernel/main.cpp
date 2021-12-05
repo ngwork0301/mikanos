@@ -151,17 +151,8 @@ extern "C" void KernelMainNewStack(
   // イベント処理のためのメインキューのインスタンス化
   ::main_queue = new std::deque<Message>(32);
 
-  // PCIデバイスを列挙する
-  auto err = pci::ScanAllBus();
-  Log(kDebug, "ScanAllBus: %s\n", err.Name());
-  for (int i = 0; i < pci::num_device; ++i) {
-    const auto& dev = pci::devices[i];
-    auto vendor_id = pci::ReadVendorId(dev.bus, dev.device, dev.function);
-    auto class_code = pci::ReadClassCode(dev.bus, dev.device, dev.function);
-    Log(kDebug, "%d.%d.%d: vend %04d, class(base) %d, class(sub) %d, class(interface) %d, head %02x\n",
-          dev.bus, dev.device, dev.function,
-          vendor_id, class_code.base, class_code.sub, class_code.interface, dev.header_type);
-  }
+  // PCIバスをスキャンしてデバイスをロードする。
+  InitializePCI();
 
   // 割り込み記述子IDTを設定
   // DPLは0固定で設定
