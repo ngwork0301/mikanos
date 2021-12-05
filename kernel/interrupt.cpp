@@ -5,6 +5,9 @@
  */
 #include "interrupt.hpp"
 
+#include "asmfunc.h"
+#include "segment.hpp"
+
 //! IDT（割り込み記述子テーブル：Interrupt descriptor table）
 std::array<InterruptDescriptor, 256> idt;
 
@@ -41,4 +44,44 @@ void NotifyEndOfInterrupt() {
   // EOI(End of Interruptレジスタ(メモリの0xfee000b0番地))に0を書き込む
   volatile auto end_of_interrupt = reinterpret_cast<uint32_t*>(0xfee000b0);
   *end_of_interrupt = 0;
+}
+
+namespace {
+  std::deque<Message>* msg_queue;
+
+  /**
+   * @fn
+   * InHandlerXHCI関数
+   * 
+   * @brief
+   * xHCI用割り込みハンドラの定義
+   * 
+   * @param [in] frame InterruptFrame(未使用)
+   */
+  __attribute__((interrupt))
+  void IntHandlerXHCI(InterruptFrame* frame) {
+    // イベントをキューに溜める
+    msg_queue->push_back(Message{Message::kInterruptXHCI});
+    // 割り込み処理が終わったことを通知
+    NotifyEndOfInterrupt();
+  }
+}
+
+/**
+ * @fn
+ * InitializeInterrupt関数
+ * 
+ * @brief
+ * 割り込み処理を初期化する
+ */
+void InitializeInterrupt(std::deque<Message>* msg_queue) {
+  ::msg_queue = msg_queue;
+
+  // 割り込み記述子IDTを設定
+  // DPLは0固定で設定
+  SetIDTEntry(idt[InterruptVector::kXHCI], 
+              MakeIDTAttr(DescriptorType::kInterruptGate, 0),
+              reinterpret_cast<uint64_t>(IntHandlerXHCI),
+              kKernelCS);
+  LoadIDT(sizeof(idt) - 1, reinterpret_cast<uintptr_t>(&idt[0]));
 }

@@ -22,6 +22,7 @@
 #include "logger.hpp"
 #include "memory_map.hpp"
 #include "memory_manager.hpp"
+#include "message.hpp"
 #include "mouse.hpp"
 #include "paging.hpp"
 #include "pci.hpp"
@@ -31,19 +32,6 @@
 #include "usb/device.hpp"
 #include "usb/xhci/xhci.hpp"
 #include "usb/xhci/trb.hpp"
-
-/**
- * @struct
- * Message構造体
- * 
- * @brief
- * キューに溜めるメッセージの形式を定義
- */
-struct Message {
-  enum Type {
-    kInterrunptXHCI,
-  } type;
-};
 
 /**
  * 配置new演算子の定義
@@ -96,25 +84,6 @@ int printk(const char* format, ...) {
 
 /**
  * @fn
- * InHandlerXHCI関数
- * 
- * @brief
- * xHCI用割り込みハンドラの定義
- * 
- * @param [in] frame InterruptFrame(未使用)
- */
-__attribute__((interrupt))
-void IntHandlerXHCI(InterruptFrame* frame) {
-  // イベントをキューに溜める
-  main_queue->push_back(Message{Message::kInterrunptXHCI});
-  // 割り込み処理が終わったことを通知
-  NotifyEndOfInterrupt();
-}
-
-
-
-/**
- * @fn
  * KernelMainNewStack関数
  * 
  * @brief
@@ -154,11 +123,8 @@ extern "C" void KernelMainNewStack(
   // PCIバスをスキャンしてデバイスをロードする。
   InitializePCI();
 
-  // 割り込み記述子IDTを設定
-  // DPLは0固定で設定
-  SetIDTEntry(idt[InterruptVector::kXHCI], MakeIDTAttr(DescriptorType::kInterruptGate, 0),
-              reinterpret_cast<uint64_t>(IntHandlerXHCI), kKernelCS);
-  LoadIDT(sizeof(idt) - 1, reinterpret_cast<uintptr_t>(&idt[0]));
+  // 割り込み処理を初期化
+  InitializeInterrupt(main_queue);
 
   // マウスデバイスを探し出してxhcへの共有ポインタを取得
   auto xhc = usb::xhci::MakeRunController();
@@ -249,7 +215,7 @@ extern "C" void KernelMainNewStack(
 
     switch (msg.type) {
       // XHCIからのマウスイベントの場合
-      case Message::kInterrunptXHCI:
+      case Message::kInterruptXHCI:
         usb::xhci::ProcessEvents(xhc);
         break;
       // どれにも該当しないイベント型だった場合
