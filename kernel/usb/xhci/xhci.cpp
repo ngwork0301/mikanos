@@ -537,17 +537,17 @@ namespace usb::xhci {
     return err;
   }
 
+  Controller* controller;
+
   /**
    * @fn
-   * MakeRunController関数
+   * Initialize関数
    * 
    * @brief
    * xHCIのデバイスからマウスを探し出し、MSI割り込みを設定して
    * マウスイベントでProcessEvents関数を呼び出すようにする。
-   * @return ProcessEvents関数にわたすxHCの共有ポインタ
    */
-  std::shared_ptr<Controller> MakeRunController() {
-
+  void Initialize() {
     // Intel製を優先して xHCのデバイスを探す
     pci::Device* xhc_dev = nullptr;
     for (int i = 0; i< pci::num_device; ++i) {
@@ -581,8 +581,8 @@ namespace usb::xhci {
     Log(kDebug, "xHC mmio_base = %08lx\n", xhc_mmio_base);
 
     // xHCの初期化と起動
-    auto xhc_ptr = std::make_shared<Controller>(xhc_mmio_base);
-    Controller& xhc = *xhc_ptr;
+    usb::xhci::controller = new Controller{xhc_mmio_base};
+    Controller& xhc = *usb::xhci::controller;
 
     if(0x8086 == pci::ReadVendorId(*xhc_dev)) {
       // Intel製のxHCだった場合は、EHCIではなくxHCに切り替える処理を実行
@@ -608,8 +608,6 @@ namespace usb::xhci {
         }
       }
     }
-
-    return xhc_ptr;
   }
 
   /**
@@ -619,11 +617,10 @@ namespace usb::xhci {
    * @brief
    * xHCIから受け取ったイベントを処理する。
    * ここでの呼び出しで、最終的にobserverとしてマッピングした関数が呼び出される。
-   * @param [in] xhc xHCへの共有ポインタ
    */
-  void ProcessEvents(const std::shared_ptr<Controller>& xhc) {
-    while (xhc->PrimaryEventRing()->HasFront()) {
-      if (auto err = ProcessEvent(*xhc)) {
+  void ProcessEvents() {
+    while (controller->PrimaryEventRing()->HasFront()) {
+      if (auto err = ProcessEvent(*controller)) {
         Log(kError, "Error while ProcessEvent: %s at %s:%d\n",
             err.Name(), err.File(), err.Line());
       }

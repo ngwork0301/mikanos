@@ -120,14 +120,13 @@ extern "C" void KernelMainNewStack(
   // イベント処理のためのメインキューのインスタンス化
   ::main_queue = new std::deque<Message>(32);
 
-  // PCIバスをスキャンしてデバイスをロードする。
-  InitializePCI();
-
   // 割り込み処理を初期化
   InitializeInterrupt(main_queue);
 
-  // マウスデバイスを探し出してxhcへの共有ポインタを取得
-  auto xhc = usb::xhci::MakeRunController();
+  // PCIバスをスキャンしてデバイスをロードする。
+  InitializePCI();
+  // xHCIマウスデバイスを探し出して初期化
+  usb::xhci::Initialize();
 
   // スクリーンサイズを設定
   const auto screen_size = ScreenSize();
@@ -216,7 +215,7 @@ extern "C" void KernelMainNewStack(
     switch (msg.type) {
       // XHCIからのマウスイベントの場合
       case Message::kInterruptXHCI:
-        usb::xhci::ProcessEvents(xhc);
+        usb::xhci::ProcessEvents();
         break;
       // どれにも該当しないイベント型だった場合
       default:
