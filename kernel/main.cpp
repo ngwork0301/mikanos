@@ -27,7 +27,6 @@
 #include "mouse.hpp"
 #include "paging.hpp"
 #include "pci.hpp"
-#include "queue.hpp"
 #include "segment.hpp"
 #include "usb/memory.hpp"
 #include "usb/device.hpp"
