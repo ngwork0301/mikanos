@@ -1,3 +1,8 @@
+/**
+ * @file mouse.hpp
+ *
+ * マウス関連を実装したファイル
+ */
 #pragma once
 
 #include <memory>
@@ -34,4 +39,4 @@ class Mouse {
   uint8_t previous_buttons_{0};
 };
 
-std::shared_ptr<Mouse> MakeMouse();
+void InitializeMouse();

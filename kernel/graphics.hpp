@@ -1,3 +1,8 @@
+/**
+ * @file graphics.hpp
+ *
+ * 画像描画関連のプログラムを集めたファイル．
+ */
 #pragma once
 
 #include <algorithm>

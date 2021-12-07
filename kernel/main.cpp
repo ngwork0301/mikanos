@@ -9,6 +9,7 @@
 #include <cstdio>
 
 #include <deque>
+#include <limits>
 #include <numeric>
 #include <vector>
 
@@ -52,12 +53,12 @@ extern "C" void __cxa_pure_virtual() { while (1); }
 /**
  * グローバル変数
  */
-//! xHCI用ホストコントローラ
-usb::xhci::Controller* xhc;
+//! メインウィンドウへの共有ポインタ
+std::shared_ptr<Window> main_window;
+//! メインウィンドウのID
+unsigned int main_window_layer_id;
 //! MSI割り込みイベント処理につかうキュー
 std::deque<Message>* main_queue;
-//! レイヤーマネージャ
-LayerManager* layer_manager;
 
 /**
  * @fn
@@ -80,6 +81,27 @@ int printk(const char* format, ...) {
 
   console->PutString(s);
   return result;
+}
+
+/**
+ * @fn
+ * InitializeMainWindow関数
+ * 
+ * @brief
+ * メインウィンドウの初期化をおこなう
+ */
+void InitializeMainWindow() {
+  main_window = std::make_shared<Window>(
+      160, 52, screen_config.pixel_format);
+  DrawWindow(*main_window->Writer(), "Hello Window");
+
+  main_window_layer_id = layer_manager->NewLayer()
+    .SetWindow(main_window)
+    .SetDraggable(true)
+    .Move({300, 100})
+    .ID();
+
+  layer_manager->UpDown(main_window_layer_id, std::numeric_limits<int>::max());
 }
 
 /**
@@ -128,65 +150,19 @@ extern "C" void KernelMainNewStack(
   // xHCIマウスデバイスを探し出して初期化
   usb::xhci::Initialize();
 
-  // スクリーンサイズを設定
-  const auto screen_size = ScreenSize();
+  // layer_managerの初期化とデスクトップ背景、コンソールなど初期レイヤーの初期化
+  InitializeLayer();
+  // メインウィンドウの初期化と描画
+  InitializeMainWindow();
+  // マウスウィンドウの初期化と描画
+  InitializeMouse();
 
-  // 背景ウィンドウを生成
-  auto bgwindow = std::make_shared<Window>(
-      screen_size.x, screen_size.y, screen_config.pixel_format);
-  auto bgwriter = bgwindow->Writer();
-
-  // 背景の描画処理
-  DrawDesktop(*bgwriter);
-
-  // メインウィンドウを作成
-  auto main_window = std::make_shared<Window>(
-      160, 52, screen_config.pixel_format);
-  DrawWindow(*main_window->Writer(), "Hello Window");
-
- // コンソール用のウィンドウを生成
-  auto console_window = std::make_shared<Window>(
-      Console::kColumns * 8, Console::kRows * 16, screen_config.pixel_format);
-  console->SetWindow(console_window);
+  // 全体の描画
+  layer_manager->Draw({{0, 0}, ScreenSize()});
 
   // メインウィンドウに表示するカウンタ変数を初期化
   char str[128];
   unsigned int count =0;
-
-  // FrameBufferインスタンスの生成
-  FrameBuffer screen;
-  if (auto err = screen.Initialize(screen_config)) {
-    Log(kError, "failed to initialize frame buffer: %s at %s:%d\n",
-      err.Name(), err.File(), err.Line());
-  }
-
-  // レイヤーマネージャの生成
-  layer_manager = new LayerManager;
-  layer_manager->SetWriter(&screen);
-
-  // Mouseインスタンスの生成
-  auto mouse = MakeMouse();
-
-  auto bglayer_id = layer_manager->NewLayer()
-      .SetWindow(bgwindow)
-      .Move({0,0})
-      .ID();
-  auto main_window_layer_id = layer_manager->NewLayer()
-    .SetWindow(main_window)
-    .SetDraggable(true)
-    .Move({300, 100})
-    .ID();
-  console->SetLayerID(layer_manager->NewLayer()
-      .SetWindow(console_window)
-      .Move({0, 0})
-      .ID());
-  
-  layer_manager->UpDown(bglayer_id, 0);
-  layer_manager->UpDown(console->LayerID(), 1);
-  layer_manager->UpDown(main_window_layer_id, 2);
-  layer_manager->UpDown(mouse->LayerID(), 3);
-  // 全体の描画
-  layer_manager->Draw({{0, 0}, screen_size});
 
   // キューにたまったイベントを処理するイベントループ
   while(true) {

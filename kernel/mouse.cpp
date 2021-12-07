@@ -1,9 +1,8 @@
-/**
- * @file mouse.cpp
- *
- * マウス関連を実装したファイル
- */
 #include "mouse.hpp"
+
+#include <limits>
+#include <memory>
+#include "graphics.hpp"
 #include "layer.hpp"
 #include "usb/classdriver/mouse.hpp"
 
@@ -125,13 +124,12 @@ void Mouse::OnInterrupt(uint8_t buttons, int8_t displacement_x, int8_t displacem
 
 /**
  * @fn
- * MakeMouse関数
+ * InitializeMouse関数
  * 
  * @brief
- * マウスインスタンスを生成する
- * @return Mouseインスタンスの共有ポインタ
+ * マウスインスタンスを生成して、layer_managerに追加する
  */
-std::shared_ptr<Mouse> MakeMouse() {
+void InitializeMouse() {
   // マウスウィンドウの生成
   auto mouse_window = std::make_shared<Window>(
       kMouseCursorWidth, kMouseCursorHeight, screen_config.pixel_format);
@@ -147,11 +145,12 @@ std::shared_ptr<Mouse> MakeMouse() {
   auto mouse = std::make_shared<Mouse>(mouse_layer_id);
   // 初期位置のマウスを描画
   mouse->SetPosition({200, 200});
+
+  // layer_managerに最前面に追加
+  layer_manager->UpDown(mouse->LayerID(), std::numeric_limits<int>::max());
   // USBマウスからのデータを受信する関数として、Mouse::OnInterruptメソッドをセット
   usb::HIDMouseDriver::default_observer =
     [mouse](uint8_t buttons, int8_t displacement_x, int8_t displacement_y) {
       mouse->OnInterrupt(buttons, displacement_x, displacement_y);
     };
-
-  return mouse;
 }

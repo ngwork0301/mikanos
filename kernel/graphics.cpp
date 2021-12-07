@@ -1,9 +1,3 @@
-/**
- * @file graphics.cpp
- *
- * 画像描画関連のプログラムを集めたファイル．
- */
-
 #include "graphics.hpp"
 
 /**

@@ -1,4 +1,6 @@
 #include "layer.hpp"
+#include <algorithm>
+#include "console.hpp"
 #include "logger.hpp"
 
 /**
@@ -366,4 +368,60 @@ void LayerManager::SetWriter(FrameBuffer* screen) {
   }
   return *it;
  }
+
+ namespace {
+  FrameBuffer* screen;
+}
+
+LayerManager* layer_manager;
+
+/**
+ * @fn
+ * InitializeLayer関数
+ * 
+ * @brief
+ * 画面に描画するウィンドウの重なりを管理するlayer_managerを初期化する。
+ */
+void InitializeLayer() {
+  // スクリーンサイズを設定
+  const auto screen_size = ScreenSize();
+
+  // 背景ウィンドウを生成
+  auto bgwindow = std::make_shared<Window>(
+      screen_size.x, screen_size.y, screen_config.pixel_format);
+  auto bgwriter = bgwindow->Writer();
+
+  // 背景の描画処理
+  DrawDesktop(*bgwriter);
+
+ // コンソール用のウィンドウを生成
+  auto console_window = std::make_shared<Window>(
+      Console::kColumns * 8, Console::kRows * 16, screen_config.pixel_format);
+  console->SetWindow(console_window);
+
+  // FrameBufferインスタンスの生成
+  screen = new FrameBuffer;
+  if (auto err = screen->Initialize(screen_config)) {
+    Log(kError, "failed to initialize frame buffer: %s at %s:%d\n",
+      err.Name(), err.File(), err.Line());
+  }
+
+  // レイヤーマネージャの生成
+  layer_manager = new LayerManager;
+  layer_manager->SetWriter(screen);
+
+  auto bglayer_id = layer_manager->NewLayer()
+      .SetWindow(bgwindow)
+      .Move({0,0})
+      .ID();
+  console->SetLayerID(layer_manager->NewLayer()
+      .SetWindow(console_window)
+      .Move({0, 0})
+      .ID());
+  
+  layer_manager->UpDown(bglayer_id, 0);
+  layer_manager->UpDown(console->LayerID(), 1);
+
+  // Log(kError, "initialize layer completed\n");
+}
  
