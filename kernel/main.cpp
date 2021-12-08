@@ -28,6 +28,7 @@
 #include "paging.hpp"
 #include "pci.hpp"
 #include "segment.hpp"
+#include "timer.hpp"
 #include "usb/memory.hpp"
 #include "usb/device.hpp"
 #include "usb/xhci/xhci.hpp"
@@ -159,6 +160,9 @@ extern "C" void KernelMainNewStack(
   // 全体の描画
   layer_manager->Draw({{0, 0}, ScreenSize()});
 
+  // タイマー割り込み処理の初期化
+  InitializeLAPICTimer();
+
   // メインウィンドウに表示するカウンタ変数を初期化
   char str[128];
   unsigned int count =0;
@@ -191,6 +195,10 @@ extern "C" void KernelMainNewStack(
       // XHCIからのマウスイベントの場合
       case Message::kInterruptXHCI:
         usb::xhci::ProcessEvents();
+        break;
+      // タイマー割り込みイベントの場合
+      case Message::kInterruptLAPICTimer:
+        printk("Timer interrupt\n");
         break;
       // どれにも該当しないイベント型だった場合
       default:

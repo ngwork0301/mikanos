@@ -65,6 +65,22 @@ namespace {
     // 割り込み処理が終わったことを通知
     NotifyEndOfInterrupt();
   }
+
+  /**
+   * @fn
+   * IntHandlerLAPICTimer関数
+   * 
+   * @brief
+   * LAPIC割り込みハンドラの定義
+   * @param [in] frame InterruptFrame(未使用)
+   */
+  __attribute__((interrupt))
+  void IntHandlerLAPICTimer(InterruptFrame* frame) {
+    // イベントをキューに溜める
+    msg_queue->push_back(Message{Message::kInterruptLAPICTimer});
+    // 割り込み処理が終わったことを通知
+    NotifyEndOfInterrupt();
+  }
 }
 
 /**
@@ -79,9 +95,15 @@ void InitializeInterrupt(std::deque<Message>* msg_queue) {
 
   // 割り込み記述子IDTを設定
   // DPLは0固定で設定
+  // xHCIマウスイベントの割り込み処理
   SetIDTEntry(idt[InterruptVector::kXHCI], 
               MakeIDTAttr(DescriptorType::kInterruptGate, 0),
               reinterpret_cast<uint64_t>(IntHandlerXHCI),
+              kKernelCS);
+  // タイマー割り込み処理
+  SetIDTEntry(idt[InterruptVector::kLAPICTimer],
+              MakeIDTAttr(DescriptorType::kInterruptGate, 0),
+              reinterpret_cast<uint64_t>(IntHandlerLAPICTimer),
               kKernelCS);
   LoadIDT(sizeof(idt) - 1, reinterpret_cast<uintptr_t>(&idt[0]));
 }
