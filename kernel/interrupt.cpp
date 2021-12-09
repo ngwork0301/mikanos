@@ -7,6 +7,7 @@
 
 #include "asmfunc.h"
 #include "segment.hpp"
+#include "timer.hpp"
 
 //! IDT（割り込み記述子テーブル：Interrupt descriptor table）
 std::array<InterruptDescriptor, 256> idt;
@@ -76,8 +77,8 @@ namespace {
    */
   __attribute__((interrupt))
   void IntHandlerLAPICTimer(InterruptFrame* frame) {
-    // イベントをキューに溜める
-    msg_queue->push_back(Message{Message::kInterruptLAPICTimer});
+    // タイマー割り込み時の動作を呼び出す
+    LAPICTimerOnInterrupt();
     // 割り込み処理が終わったことを通知
     NotifyEndOfInterrupt();
   }

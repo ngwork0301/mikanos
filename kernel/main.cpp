@@ -165,13 +165,16 @@ extern "C" void KernelMainNewStack(
 
   // メインウィンドウに表示するカウンタ変数を初期化
   char str[128];
-  unsigned int count =0;
 
   // キューにたまったイベントを処理するイベントループ
   while(true) {
-    // メインウィンドウに表示するカウンタ変数をインクリメント
-    ++count;
-    sprintf(str, "%010u", count);
+    // cliオペランドで割り込みを一時的に受け取らないようにする
+    __asm__("cli");
+    const auto tick = timer_manager->CurrentTick();
+    __asm__("sti");
+
+    // メインウィンドウに表示するカウンタ変数を表示
+    sprintf(str, "%010u", tick);
     FillRectangle(*main_window->Writer(), {24, 28}, {8 * 10, 16}, {0xc6, 0xc6, 0xc6});
     WriteString(*main_window->Writer(), {24, 28}, str, {0, 0, 0});
     layer_manager->Draw(main_window_layer_id);
@@ -180,8 +183,7 @@ extern "C" void KernelMainNewStack(
     __asm__("cli");
     // イベントがキューに溜まっていない場合は、割り込みを受け取る状態にして停止させる
     if (main_queue->size() == 0) {
-      // __asm__("sti\n\thlt");  // カウンタ変数のインクリメントを走らせるため、hltしない
-      __asm__("sti");
+      __asm__("sti\n\thlt");
       continue;
     }
 
