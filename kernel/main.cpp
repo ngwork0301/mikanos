@@ -161,7 +161,11 @@ extern "C" void KernelMainNewStack(
   layer_manager->Draw({{0, 0}, ScreenSize()});
 
   // タイマー割り込み処理の初期化
-  InitializeLAPICTimer();
+  InitializeLAPICTimer(*main_queue);
+
+  // 適当に200と600カウントしたらタイムアウトするタイマーを追加
+  timer_manager->AddTimer(Timer(200, 2));
+  timer_manager->AddTimer(Timer(600, -1));
 
   // メインウィンドウに表示するカウンタ変数を初期化
   char str[128];
@@ -174,7 +178,7 @@ extern "C" void KernelMainNewStack(
     __asm__("sti");
 
     // メインウィンドウに表示するカウンタ変数を表示
-    sprintf(str, "%010u", tick);
+    sprintf(str, "%010lu", tick);
     FillRectangle(*main_window->Writer(), {24, 28}, {8 * 10, 16}, {0xc6, 0xc6, 0xc6});
     WriteString(*main_window->Writer(), {24, 28}, str, {0, 0, 0});
     layer_manager->Draw(main_window_layer_id);
@@ -201,6 +205,16 @@ extern "C" void KernelMainNewStack(
       // タイマー割り込みイベントの場合
       case Message::kInterruptLAPICTimer:
         printk("Timer interrupt\n");
+        break;
+      // タイマーがタイムアウトしたときのイベント
+      case Message::kTimerTimeout:
+        printk("Timer: timeout = %lu, value = %d\n",
+            msg.arg.timer.timeout, msg.arg.timer.value);
+        if (msg.arg.timer.value > 0) {
+          // valueが0より大きい場合、さらに100を加えたものをタイムアウトにしたタイマーを追加する
+          timer_manager->AddTimer(Timer(
+              msg.arg.timer.timeout + 100, msg.arg.timer.value + 1));
+        }
         break;
       // どれにも該当しないイベント型だった場合
       default:

@@ -17,9 +17,9 @@ namespace {
  * @brief
  * APICタイマーを初期化する
  */
-void InitializeLAPICTimer(){
+void InitializeLAPICTimer(std::deque<Message>& msg_queue){
   // TimerManagerインスタンスを生成
-  timer_manager = new TimerManager;
+  timer_manager = new TimerManager{msg_queue};
 
   divide_config = 0b1011; // divide 1:1 分周比は1対1でそのまま減少させる
   // lvt_timer = (0b001 << 16) | 32;  // masked, one-shot
@@ -65,6 +65,43 @@ void StopLAPICTimer() {
 
 /**
  * @fn
+ * Timer::Timerコンストラクタ
+ * 
+ * @brief
+ * Timerインスタンスを生成する。
+ * @param [in] timeout タイムアウト値
+ * @param [in] value タイマーに関連付けする値
+ */
+Timer::Timer(unsigned long timeout, int value)
+    : timeout_{timeout}, value_{value} {
+}
+
+/**
+ * @fn
+ * TimerManager::TimerManagerコンストラクタ
+ * 
+ * @brief
+ * TimerManagerインスタンスを生成する
+ */
+TimerManager::TimerManager(std::deque<Message>& msg_queue)
+    : msg_queue_{msg_queue} {
+  // 番兵として１番タイムアウト値の大きなタイマーインスタンスを加えておく
+  timers_.push(Timer{std::numeric_limits<unsigned long>::max(), -1});
+}
+
+/**
+ * @fn
+ * TimerManager::AddTimerメソッド
+ * 
+ * @brief
+ * Timerインスタンスを加える
+ */
+void TimerManager::AddTimer(const Timer& timer) {
+  timers_.push(timer);
+}
+
+/**
+ * @fn
  * TimerManager::Tickメソッド
  * 
  * @brief
@@ -72,6 +109,23 @@ void StopLAPICTimer() {
  */
 void TimerManager::Tick() {
   ++tick_;
+  // タイムアウトの有無をチェック
+  while (true) {
+    const auto& t = timers_.top();
+    if (t.Timeout() > tick_) {
+      // １番優先度のたかいタイマーがタイムアウトしていないときはそれ以降もタイムアウトしていないので終わり
+      break;
+    }
+
+    Message m{Message::kTimerTimeout};
+    m.arg.timer.timeout = t.Timeout();
+    m.arg.timer.value = t.Value();
+    // メインキューに情報を加えてkTimerTimeoutメッセージを入れる
+    msg_queue_.push_back(m);
+
+    // タイムアウトしたのでtimers_からこのタイマーを取り除く
+    timers_.pop();
+  }
 }
 
 TimerManager* timer_manager;
