@@ -13,6 +13,7 @@
 #include <numeric>
 #include <vector>
 
+#include "acpi.hpp"
 #include "asmfunc.h"
 #include "console.hpp"
 #include "font.hpp"
@@ -112,12 +113,14 @@ void InitializeMainWindow() {
  * スタック領域を移動する処理を含んだ別のカーネルエントリポイント
  * @param [in] frame_buffer_config_ref FrameBufferConfig構造体への参照
  * @param [in] memory_map_ref UEFIのブートサービスが取得したメモリマップへの参照
+ * @param [in] acpi_table UEFIが取得したRSDP構造体へのポインタ
  */
 alignas(16) uint8_t kernel_main_stack[1024 * 1024];
 
 extern "C" void KernelMainNewStack(
     const FrameBufferConfig& frame_buffer_config_ref,
-    const MemoryMap& memory_map_ref) {
+    const MemoryMap& memory_map_ref,
+    const acpi::RSDP& acpi_table) {
 
   // 新しいメモリ領域へ移動
   MemoryMap memory_map{memory_map_ref};
@@ -161,6 +164,7 @@ extern "C" void KernelMainNewStack(
   layer_manager->Draw({{0, 0}, ScreenSize()});
 
   // タイマー割り込み処理の初期化
+  acpi::Initialize(acpi_table);
   InitializeLAPICTimer(*main_queue);
 
   // 適当に200と600カウントしたらタイムアウトするタイマーを追加

@@ -455,11 +455,22 @@ EFI_STATUS EFIAPI UefiMain(
       Print(L"Unimplemented pixel format: %d\n", gop->Mode->Info->PixelFormat);
       Halt();
   }
+  /* /////// RSDP構造体へのポインタを取得してカーネルに渡す //////////////////////////// */
+  VOID* acpi_table = NULL;
+  for (UINTN i = 0; i < system_table->NumberOfTableEntries; ++i) {
+    // system_tableのエントリの中から、VendorGuildがEfiAcpiTableGuidと一致するものを探す
+    if (CompareGuid(&gEfiAcpiTableGuid,
+                    &system_table->ConfigurationTable[i].VendorGuid)) {
+      acpi_table = system_table->ConfigurationTable[i].VendorTable;
+      break;
+    }
+  }
 
   typedef void EntryPointType(const struct FrameBufferConfig*,
-                              const struct MemoryMap*);
+                              const struct MemoryMap*,
+                              const VOID*);
   EntryPointType* entry_point = (EntryPointType*)entry_addr;
-  entry_point(&config, &memmap);
+  entry_point(&config, &memmap, acpi_table);
   /* ////////////////////////////////////////////////////////////////////// */
 
   // 画面出力処理  
