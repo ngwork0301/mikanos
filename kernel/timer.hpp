@@ -69,5 +69,9 @@ class TimerManager {
 };
 
 extern TimerManager* timer_manager;
+//! Local APICタイマーのレート [Hz = Count/sec]
+extern unsigned long lapic_timer_freq;
+//! TimerManager::Tick()の分解レート [Hz]
+const int kTimerFreq = 100;
 
 void LAPICTimerOnInterrupt();

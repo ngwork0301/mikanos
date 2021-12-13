@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <cstdlib>
+#include "asmfunc.h"
 #include "error.hpp"
 #include "logger.hpp"
 
@@ -151,5 +152,31 @@ namespace acpi {
       Log(kError, "FADT is not found.\n");
       exit(1);
     }
+  }
+
+  /**
+   * @fn
+   * acpi::WaitMilliseconds関数
+   * 
+   * @brief 
+   * 指定したミリ秒が経過するのを待つ
+   * @param msec 待つ時間(msec)
+   */
+  void WaitMilliseconds(unsigned long msec){
+    //! ACPI PMカウンタのビット長フラグ(FADTのビット8) 真のときは32ビット。偽のときは24ビット
+    const bool pm_timer_32 = (fadt->flags >> 8) & 1;
+    //! ACPI PMカウンタ FADTのpm_tmr_blkに示されるレジスタから直接値をもってくる
+    const uint32_t start = IoIn32(fadt->pm_tmr_blk);
+    uint32_t end = start + kPMTimerFreq * msec / 1000;
+    if (!pm_timer_32) {
+      // 24ビットのとき、32ビットへ変換(先頭ビットは0にする)
+      end &= 0x00ffffffu;
+    }
+
+    if (end < start) {  // overflow
+      // endがuint32_tの幅をこえてオーバーフローしたときは、まずはカウンタもオーバーフローするまで待つ
+      while(IoIn32(fadt->pm_tmr_blk) >= start);
+    }
+    while(IoIn32(fadt->pm_tmr_blk) < end);
   }
 }

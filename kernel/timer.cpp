@@ -1,5 +1,6 @@
 #include "timer.hpp"
 
+#include "acpi.hpp"
 #include "interrupt.hpp"
 
 namespace {
@@ -24,7 +25,20 @@ void InitializeLAPICTimer(std::deque<Message>& msg_queue){
   divide_config = 0b1011; // divide 1:1 分周比は1対1でそのまま減少させる
   // lvt_timer = (0b001 << 16) | 32;  // masked, one-shot
   lvt_timer = (0b010 << 16) | InterruptVector::kLAPICTimer; // not-masked, periodic
-  initial_count = 0x1000000u;
+
+  // ACPI PMタイマーで0.1秒計測して、その間のLocal APICのカウント数を調べる
+  StartLAPICTimer();
+  acpi::WaitMilliseconds(100);; // divide 1:1 分周比は1対1でそのまま減少させる
+  const auto elapsed = LAPICTimerElapsed();
+  StopLAPICTimer();
+
+  // 0.1秒のカウント数なので、10をかけてHzに変換
+  lapic_timer_freq = static_cast<unsigned long>(elapsed) * 10;
+
+  divide_config = 0b1011;
+  lvt_timer = (0b10 << 16) | InterruptVector::kLAPICTimer; // not-masked, periodic
+  //! kTimeFreqで定義する分解能のカウント数を初期値に設定して、その数だけカウントしたら1増えるようにする
+  initial_count = lapic_timer_freq / kTimerFreq;
 }
 
 /**
@@ -129,6 +143,7 @@ void TimerManager::Tick() {
 }
 
 TimerManager* timer_manager;
+unsigned long lapic_timer_freq;
 
 /**
  * @fn
