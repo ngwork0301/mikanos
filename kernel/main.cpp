@@ -20,6 +20,7 @@
 #include "frame_buffer_config.hpp"
 #include "graphics.hpp"
 #include "interrupt.hpp"
+#include "keyboard.hpp"
 #include "layer.hpp"
 #include "logger.hpp"
 #include "memory_map.hpp"
@@ -167,9 +168,12 @@ extern "C" void KernelMainNewStack(
   acpi::Initialize(acpi_table);
   InitializeLAPICTimer(*main_queue);
 
+  // キーボードの初期化
+  InitializeKeyboard(*main_queue);
+
   // 適当に200と600カウントしたらタイムアウトするタイマーを追加
-  timer_manager->AddTimer(Timer(200, 2));
-  timer_manager->AddTimer(Timer(600, -1));
+  // timer_manager->AddTimer(Timer(200, 2));
+  // timer_manager->AddTimer(Timer(600, -1));
 
   // メインウィンドウに表示するカウンタ変数を初期化
   char str[128];
@@ -212,12 +216,18 @@ extern "C" void KernelMainNewStack(
         break;
       // タイマーがタイムアウトしたときのイベント
       case Message::kTimerTimeout:
-        printk("Timer: timeout = %lu, value = %d\n",
-            msg.arg.timer.timeout, msg.arg.timer.value);
-        if (msg.arg.timer.value > 0) {
-          // valueが0より大きい場合、さらに100を加えたものをタイムアウトにしたタイマーを追加する
-          timer_manager->AddTimer(Timer(
-              msg.arg.timer.timeout + 100, msg.arg.timer.value + 1));
+        // printk("Timer: timeout = %lu, value = %d\n",
+        //     msg.arg.timer.timeout, msg.arg.timer.value);
+        // if (msg.arg.timer.value > 0) {
+        //   // valueが0より大きい場合、さらに100を加えたものをタイムアウトにしたタイマーを追加する
+        //   timer_manager->AddTimer(Timer(
+        //       msg.arg.timer.timeout + 100, msg.arg.timer.value + 1));
+        // }
+        break;
+      // キーボード入力イベントの場合
+      case Message::kKeyPush:
+        if (msg.arg.keyboard.ascii != 0) {
+          printk("%c", msg.arg.keyboard.ascii);
         }
         break;
       // どれにも該当しないイベント型だった場合
