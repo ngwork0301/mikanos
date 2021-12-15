@@ -29,6 +29,7 @@ struct Message {
     } timer;
 
     struct {
+      uint8_t modifier;
       uint8_t keycode;
       char ascii;
     } keyboard;
