@@ -16,6 +16,22 @@ struct PixelColor {
   uint8_t r, g, b;
 };
 
+/**
+ * @fn
+ * ToColor関数
+ * 
+ * @brief
+ * 32ビット整数からPixelColor構造体をつくる
+ * @param [in] c 色を示す整数
+ */
+constexpr PixelColor ToColor(uint32_t c) {
+  return {
+    static_cast<uint8_t>((c >> 16) & 0xff),
+    static_cast<uint8_t>((c >> 8) & 0xff),
+    static_cast<uint8_t>(c & 0xff)
+  };
+}
+
 inline bool operator==(const PixelColor& lhs, const PixelColor& rhs) {
   return lhs.r == rhs.r && lhs.g == rhs.g && lhs.b == rhs.b;
 }

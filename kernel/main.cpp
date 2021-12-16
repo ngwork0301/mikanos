@@ -61,6 +61,72 @@ std::shared_ptr<Window> main_window;
 unsigned int main_window_layer_id;
 //! MSI割り込みイベント処理につかうキュー
 std::deque<Message>* main_queue;
+//! テキストボックスへの共有ポインタ
+std::shared_ptr<Window> text_window;
+//! テキストボックスのID
+unsigned int text_window_layer_id;
+//! テキストボックス内のインデックス
+int text_window_index;
+
+/**
+ * @fn
+ * InitializeTextWindow関数
+ * 
+ * @brief 
+ * テキストボックスを初期化する。
+ */
+void InitializeTextWindow() {
+  //! ウィンドウの横幅
+  const int win_w = 160;
+  //! ウィンドウの高さ
+  const int win_h = 52;
+
+  text_window = std::make_shared<Window>(
+      win_w, win_h, screen_config.pixel_format);
+  DrawWindow(*text_window->Writer(), "Text Box Test");
+  DrawTextbox(*text_window->Writer(), {4, 24}, {win_w -8, win_h - 24 - 4});
+
+  // レイヤーを生成
+  text_window_layer_id = layer_manager->NewLayer()
+    .SetWindow(text_window)
+    .SetDraggable(true)
+    .Move({350, 200})
+    .ID();
+
+  // レイヤーマネージャにレイヤーを追加して描画
+  layer_manager->UpDown(text_window_layer_id, std::numeric_limits<int>::max());
+}
+
+/**
+ * @fn
+ * InputTextWindow関数
+ * 
+ * @brief 
+ * 受け取った文字をテキストボックス末尾に追加
+ * @param [in] c 描画する文字
+ */
+void InputTextWindow(char c) {
+  if (c == 0) {
+    return;
+  }
+
+  // 現在位置を返すラムダ式
+  auto pos = []() { return Vector2D<int>{8 + 8*text_window_index, 24 + 6}; };
+
+  //! 最大文字数
+  const int max_chars = (text_window->Width() - 16) / 8;
+  if (c == '\b' && text_window_index > 0) {
+    // バックスペースキーがきたら文字を消してインデックスを下げる
+    --text_window_index;
+    FillRectangle(*text_window->Writer(), pos(), {8, 16}, ToColor(0xffffff));
+  } else if(c >= ' ' && text_window_index < max_chars) {
+    // 通常の文字が入力されたとき、文字を描画して、インデックスを上げる
+    WriteAscii(*text_window->Writer(), pos(), c, ToColor(0));
+    ++text_window_index;
+  }
+  // レイヤーの再描画
+  layer_manager->Draw(text_window_layer_id);
+}
 
 /**
  * @fn
@@ -158,6 +224,8 @@ extern "C" void KernelMainNewStack(
   InitializeLayer();
   // メインウィンドウの初期化と描画
   InitializeMainWindow();
+  // テキストボックスの初期化と描画
+  InitializeTextWindow();
   // マウスウィンドウの初期化と描画
   InitializeMouse();
 
@@ -227,7 +295,8 @@ extern "C" void KernelMainNewStack(
       // キーボード入力イベントの場合
       case Message::kKeyPush:
         if (msg.arg.keyboard.ascii != 0) {
-          printk("%c", msg.arg.keyboard.ascii);
+          // テキストボックス内に描画
+          InputTextWindow(msg.arg.keyboard.ascii);
         }
         break;
       // どれにも該当しないイベント型だった場合
