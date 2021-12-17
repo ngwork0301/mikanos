@@ -99,6 +99,21 @@ void InitializeTextWindow() {
 
 /**
  * @fn
+ * DrawTextCursor関数
+ * 
+ * @brief 
+ * テキストボックス内のカーソルの表示・非表示を切り替える。
+ * 表示の場合は、黒。非表示の場合は白で塗りつぶし。
+ * @param [in] visible 表示=true, 非表示=false 
+ */
+void DrawTextCursor(bool visible) {
+  const auto color = visible ? ToColor(0) : ToColor(0xffffff);
+  const auto pos = Vector2D<int>{8 + 8*text_window_index, 24 + 5};
+  FillRectangle(*text_window->Writer(), pos, {7, 15}, color);
+}
+
+/**
+ * @fn
  * InputTextWindow関数
  * 
  * @brief 
@@ -114,15 +129,21 @@ void InputTextWindow(char c) {
   auto pos = []() { return Vector2D<int>{8 + 8*text_window_index, 24 + 6}; };
 
   //! 最大文字数
-  const int max_chars = (text_window->Width() - 16) / 8;
+  const int max_chars = (text_window->Width() - 16) / 8 - 1;
+  // バックスペースキーがきたら文字を消してインデックスを下げる
   if (c == '\b' && text_window_index > 0) {
-    // バックスペースキーがきたら文字を消してインデックスを下げる
+    // 一時的にカーソルは非表示
+    DrawTextCursor(false);
     --text_window_index;
     FillRectangle(*text_window->Writer(), pos(), {8, 16}, ToColor(0xffffff));
+    DrawTextCursor(true);
+  // 通常の文字が入力されたとき、文字を描画して、インデックスを上げる
   } else if(c >= ' ' && text_window_index < max_chars) {
-    // 通常の文字が入力されたとき、文字を描画して、インデックスを上げる
+    // 一時的にカーソルを非表示
+    DrawTextCursor(false);
     WriteAscii(*text_window->Writer(), pos(), c, ToColor(0));
     ++text_window_index;
+    DrawTextCursor(true);
   }
   // レイヤーの再描画
   layer_manager->Draw(text_window_layer_id);
@@ -239,9 +260,14 @@ extern "C" void KernelMainNewStack(
   // キーボードの初期化
   InitializeKeyboard(*main_queue);
 
-  // 適当に200と600カウントしたらタイムアウトするタイマーを追加
-  // timer_manager->AddTimer(Timer(200, 2));
-  // timer_manager->AddTimer(Timer(600, -1));
+  // 0.5秒でカーソルを点滅させる
+  //! カーソル点滅のためのタイマーであることをしめす値としていれておく
+  const int kTextboxCursorTimer = 1;
+  const int kTimer05Sec = static_cast<int>(kTimerFreq * 0.5);
+  __asm__("cli");  // 割り込みを禁止
+  timer_manager->AddTimer(Timer{kTimer05Sec, kTextboxCursorTimer});
+  __asm__("sti");  // 割り込みを許可
+  bool textbox_cursor_visible = false;
 
   // メインウィンドウに表示するカウンタ変数を初期化
   char str[128];
@@ -284,13 +310,16 @@ extern "C" void KernelMainNewStack(
         break;
       // タイマーがタイムアウトしたときのイベント
       case Message::kTimerTimeout:
-        // printk("Timer: timeout = %lu, value = %d\n",
-        //     msg.arg.timer.timeout, msg.arg.timer.value);
-        // if (msg.arg.timer.value > 0) {
-        //   // valueが0より大きい場合、さらに100を加えたものをタイムアウトにしたタイマーを追加する
-        //   timer_manager->AddTimer(Timer(
-        //       msg.arg.timer.timeout + 100, msg.arg.timer.value + 1));
-        // }
+        if (msg.arg.timer.value  == kTextboxCursorTimer) {
+          __asm__("cli");  // 割り込み禁止
+          timer_manager->AddTimer(
+              Timer{msg.arg.timer.timeout + kTimer05Sec, kTextboxCursorTimer});
+          __asm__("sti"); // 割り込み許可
+          // 点滅のため、割り込みのたびに反転
+          textbox_cursor_visible = !textbox_cursor_visible;
+          DrawTextCursor(textbox_cursor_visible);
+          layer_manager->Draw(text_window_layer_id);
+        }
         break;
       // キーボード入力イベントの場合
       case Message::kKeyPush:
