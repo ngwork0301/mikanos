@@ -53,6 +53,24 @@ void operator delete(void* obj) noexcept {
 extern "C" void __cxa_pure_virtual() { while (1); }
 
 /**
+ * @struct
+ * TaskContext構造体
+ * 
+ * @brief 
+ * タスクのコンテキストを保存するための構造体
+ */
+struct TaskContext {
+  uint64_t cr3, rip, rflags, reserved1; // offset 0x00
+  uint64_t cs, ss, fs, gs;   // offset 0x20
+  uint64_t rax, rbx, rcx, rdx, rdi, rsi, rsp, rbp; // offset 0x40
+  uint64_t r8, r9, r10, r11, r12, r13, r14, r15;   // offset 0x80
+  std::array<uint8_t, 512> fxsave_area;   // offset 0xc0
+} __attribute__((packed));
+
+//! それぞれのタスク用のコンテキスト
+alignas(16) TaskContext task_b_ctx, task_a_ctx;
+
+/**
  * グローバル変数
  */
 //! メインウィンドウへの共有ポインタ
@@ -67,6 +85,31 @@ std::shared_ptr<Window> text_window;
 unsigned int text_window_layer_id;
 //! テキストボックス内のインデックス
 int text_window_index;
+//! TaskB()用のウィンドウ
+std::shared_ptr<Window> task_b_window;
+//! TaskB()ウィンドウのレイヤーID
+unsigned int task_b_window_layer_id;
+
+/**
+ * @fn
+ * InitializeTaskBWindow関数
+ * 
+ * @brief 
+ * TaskB()を実行するウィンドウを初期化する
+ */
+void InitializeTaskBWindow() {
+  task_b_window = std::make_shared<Window>(
+      160, 52, screen_config.pixel_format);
+  DrawWindow(*task_b_window->Writer(), "TaskB Window");
+
+  task_b_window_layer_id = layer_manager->NewLayer()
+    .SetWindow(task_b_window)
+    .SetDraggable(true)
+    .Move({100, 100})
+    .ID();
+  
+  layer_manager->UpDown(task_b_window_layer_id, std::numeric_limits<int>::max());
+}
 
 /**
  * @fn
@@ -174,6 +217,34 @@ int printk(const char* format, ...) {
 
 /**
  * @fn
+ * TaskB関数
+ * 
+ * @brief 
+ * ループのたびにコンテキスト切り替える
+ * @param [in] task_id タスクID
+ * @param [in] data タスクにつかうデータ
+ */
+void TaskB(int task_id, int data) {
+  printk("TaskB: task_id=%d, data=%d\n", task_id, data);
+  char str[128];
+  int count = 0;
+  // 無限ループ
+  while (true) {
+    ++count;
+    sprintf(str, "%010d", count);
+    // 一旦背景色で塗りつぶしてクリアする
+    FillRectangle(*task_b_window->Writer(), {24, 28}, {8 * 10, 16}, {0xc6, 0xc6, 0xc6});
+    // 文字列を描画
+    WriteString(*task_b_window->Writer(), {24, 28}, str, {0, 0, 0});
+    layer_manager->Draw(task_b_window_layer_id);
+
+    // コンテキストをメイン関数にスイッチする。
+    SwitchContext(&task_a_ctx, &task_b_ctx);
+  }
+}
+
+/**
+ * @fn
  * InitializeMainWindow関数
  * 
  * @brief
@@ -247,6 +318,8 @@ extern "C" void KernelMainNewStack(
   InitializeMainWindow();
   // テキストボックスの初期化と描画
   InitializeTextWindow();
+  // TaskBウィンドウの初期化と描画
+  InitializeTaskBWindow();
   // マウスウィンドウの初期化と描画
   InitializeMouse();
 
@@ -269,6 +342,24 @@ extern "C" void KernelMainNewStack(
   __asm__("sti");  // 割り込みを許可
   bool textbox_cursor_visible = false;
 
+  // TaskB()用のコンテキストを作成する
+  std::vector<uint64_t> task_b_stack(1024);
+  uint64_t task_b_stack_end = reinterpret_cast<uint64_t>(&task_b_stack[1024]);
+
+  memset(&task_b_ctx, 0 ,sizeof(task_b_ctx));
+  task_b_ctx.rip = reinterpret_cast<uint64_t>(TaskB);
+  task_b_ctx.rdi = 1;
+  task_b_ctx.rsi = 42;
+
+  task_b_ctx.cr3 = GetCR3();
+  task_b_ctx.rflags = 0x202;
+  task_b_ctx.cs = kKernelCS;
+  task_b_ctx.ss = kKernelSS;
+  task_b_ctx.rsp = (task_b_stack_end & ~0xflu) - 8;
+
+  // MXCSR のすべての例外をマスクする
+  *reinterpret_cast<uint32_t*>(&task_b_ctx.fxsave_area[24]) = 0x1f80;
+
   // メインウィンドウに表示するカウンタ変数を初期化
   char str[128];
 
@@ -290,6 +381,8 @@ extern "C" void KernelMainNewStack(
     // イベントがキューに溜まっていない場合は、割り込みを受け取る状態にして停止させる
     if (main_queue->size() == 0) {
       __asm__("sti\n\thlt");
+      // コンテキストをTaskB()関数にスイッチ
+      SwitchContext(&task_b_ctx, &task_a_ctx);
       continue;
     }
 
