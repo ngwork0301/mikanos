@@ -77,10 +77,8 @@ namespace {
    */
   __attribute__((interrupt))
   void IntHandlerLAPICTimer(InterruptFrame* frame) {
-    // タイマー割り込み時の動作を呼び出す
+    // タイマー割り込み時の動作を呼び出す。割り込み処理の終了通知を呼び出し先でおこなう。
     LAPICTimerOnInterrupt();
-    // 割り込み処理が終わったことを通知
-    NotifyEndOfInterrupt();
   }
 }
 

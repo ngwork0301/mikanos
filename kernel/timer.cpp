@@ -2,6 +2,7 @@
 
 #include "acpi.hpp"
 #include "interrupt.hpp"
+#include "task.hpp"
 
 namespace {
   const uint32_t kCountMax = 0xffffffffu;
@@ -120,15 +121,30 @@ void TimerManager::AddTimer(const Timer& timer) {
  * 
  * @brief
  * カウンターをインクリメントする
+ * @return bool タスクタイマーのタイムアウト有無
  */
-void TimerManager::Tick() {
+bool TimerManager::Tick() {
   ++tick_;
+
+  //! タスクタイマーのタイムアウト発生有無
+  bool task_timer_timeout = false;
+
   // タイムアウトの有無をチェック
   while (true) {
     const auto& t = timers_.top();
     if (t.Timeout() > tick_) {
       // １番優先度のたかいタイマーがタイムアウトしていないときはそれ以降もタイムアウトしていないので終わり
       break;
+    }
+
+    // タスクタイマーがタイムアウトしていたときは特別扱い
+    if (t.Value() == kTaskTimerValue) {
+      // フラグを立てるだけ
+      task_timer_timeout = true;
+      // メインキューに入れないでスキップして入れ直し。
+      timers_.pop();
+      timers_.push(Timer{tick_ + kTaskTimerPeriod, kTaskTimerValue});
+      continue;
     }
 
     Message m{Message::kTimerTimeout};
@@ -140,6 +156,8 @@ void TimerManager::Tick() {
     // タイムアウトしたのでtimers_からこのタイマーを取り除く
     timers_.pop();
   }
+
+  return task_timer_timeout;
 }
 
 TimerManager* timer_manager;
@@ -150,8 +168,13 @@ unsigned long lapic_timer_freq;
  * LAPICTimerOnInterrupt関数
  * 
  * @brief
- * タイマー割り込み時の動作
+ * タイマー割り込みの処理をして、必要ならタイムを切り替える。
  */
 void LAPICTimerOnInterrupt() {
-  timer_manager->Tick();
+  const bool task_timer_timeout = timer_manager->Tick();
+  NotifyEndOfInterrupt();
+
+  if (task_timer_timeout) {
+    SwitchTask();
+  }
 }

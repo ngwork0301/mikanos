@@ -8,6 +8,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <queue>
 #include <vector>
 #include "message.hpp"
@@ -56,7 +57,7 @@ class TimerManager {
   public:
     TimerManager(std::deque<Message>& msg_queue);
     void AddTimer(const Timer& timer);
-    void Tick();
+    bool Tick();
     unsigned long CurrentTick() const { return tick_; }
 
   private:
@@ -73,5 +74,9 @@ extern TimerManager* timer_manager;
 extern unsigned long lapic_timer_freq;
 //! TimerManager::Tick()の分解レート [Hz]
 const int kTimerFreq = 100;
+//! タスク切り替え用タイマーの周期 (Hz)
+const int kTaskTimerPeriod = static_cast<int>(kTimerFreq * 0.02);
+//! タスク切り替え用タイマーの持つ数値(他のタイマーで使わない値=int最小の値)
+const int kTaskTimerValue = std::numeric_limits<int>::min();
 
 void LAPICTimerOnInterrupt();
