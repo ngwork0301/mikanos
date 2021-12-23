@@ -6,7 +6,9 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 /**
  * @struct
@@ -23,8 +25,53 @@ struct TaskContext {
   std::array<uint8_t, 512> fxsave_area;   // offset 0xc0
 } __attribute__((packed));
 
-//! それぞれのタスク用のコンテキスト
-extern TaskContext task_b_ctx, task_a_ctx;
+using TaskFunc = void (uint64_t, uint64_t);
 
-void SwitchTask();
+/**
+ * @class
+ * Taskクラス
+ * 
+ * @brief 
+ * コンテキストスイッチできるタスクの定義
+ */
+class Task {
+  public:
+    static const size_t kDefaultStackBytes = 4096;
+    Task(uint64_t id);
+    Task& InitContext(TaskFunc* f, int64_t data);
+    TaskContext& Context();
+  
+  private:
+    //! タスクID
+    uint64_t id_;
+    // スタック領域
+    std::vector<uint64_t> stack_;
+    // コンテキスト構造体
+    alignas(16) TaskContext context_;
+};
+
+/**
+ * @class
+ * TaskManagerクラス
+ * 
+ * @brief 
+ * 複数のTaskインスタンスをまとめて管理する。
+ */
+class TaskManager {
+  public:
+    TaskManager();
+    Task& NewTask();
+    void SwitchTask();
+
+  private:
+    //! タスクインスタンスのリスト
+    std::vector<std::unique_ptr<Task>> tasks_{};
+    //! 付与されている最新のタスクID
+    uint64_t latest_id_{0};
+    //! 現在のタスクのインデックス
+    size_t current_task_index_{0};
+};
+
+extern TaskManager* task_manager;
+
 void InitializeTask();

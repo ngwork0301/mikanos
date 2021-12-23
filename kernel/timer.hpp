@@ -75,9 +75,7 @@ extern unsigned long lapic_timer_freq;
 //! TimerManager::Tick()の分解レート [Hz]
 const int kTimerFreq = 100;
 //! タスク切り替え用タイマーの周期 (Hz)
-// const int kTaskTimerPeriod = static_cast<int>(kTimerFreq * 0.02);
-//! プリエンプティブマルチタスク担っているか確認するため、一時的に1秒ごとのタスク切り替えにする。
-const int kTaskTimerPeriod = static_cast<int>(kTimerFreq * 1.0);
+const int kTaskTimerPeriod = static_cast<int>(kTimerFreq * 0.02);
 //! タスク切り替え用タイマーの持つ数値(他のタイマーで使わない値=int最小の値)
 const int kTaskTimerValue = std::numeric_limits<int>::min();
 
