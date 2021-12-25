@@ -60,12 +60,51 @@ Task& Task::InitContext(TaskFunc* f, int64_t data) {
 
 /**
  * @fn
+ * Task::IDメソッド
+ * 
+ * @brief 
+ * getter。このタスクのIDを取得
+ * @return uint64_t タスクID
+ */
+uint64_t Task::ID() const {
+  return id_;
+}
+
+/**
+ * @fn
+ * Task::Sleepメソッド
+ * 
+ * @brief 
+ * このタスクをスリープする
+ * @return Task& タスクインスタンス
+ */
+Task& Task::Sleep() {
+  task_manager->Sleep(this);
+  return *this;
+}
+
+/**
+ * @fn
+ * Task::Wakeupメソッド
+ * 
+ * @brief 
+ * このタスクを実行可能状態にする
+ * @return Task& タスクインスタンス
+ */
+Task& Task::Wakeup() {
+  task_manager->Wakeup(this);
+  return *this;
+}
+
+
+/**
+ * @fn
  * TaskManager::TaskManagerコンストラクタ
  * @brief Construct a new Task Manager:: Task Manager object
  */
 TaskManager::TaskManager() {
-  // これを呼び出した今実行中のコンテキストをタスクインスタンスとして登録しておく。
-  NewTask();
+  // これを呼び出した今実行中のコンテキストをタスクインスタンスとしてRunキューに登録しておく。
+  running_.push_back(&NewTask());
 }
 
 /**
@@ -88,19 +127,104 @@ Task& TaskManager::NewTask() {
  * @brief
  * 次のタスクへの切り替えをおこなう。
  */
-void TaskManager::SwitchTask() {
-  size_t next_task_index = current_task_index_ + 1;
-  if (next_task_index >= tasks_.size()) {
-    // 次のタスクがない場合は最初にもどる
-    next_task_index = 0;
+void TaskManager::SwitchTask(bool current_sleep) {
+  // Runキューから最前のタスクを取り出し
+  Task* current_task = running_.front();
+  running_.pop_front();
+  if (!current_sleep) {
+    // スリープしないのであれば、Runキューの末尾に再度タスクを入れる
+    running_.push_back(current_task);
+  }
+  // 次のタスク
+  Task* next_task = running_.front();
+
+  // 現在のタスクと次のタスクのコンテキストの切り替え
+  SwitchContext(&next_task->Context(), &current_task->Context());
+}
+
+/**
+ * @fn
+ * TaskManager::Sleepメソッド
+ * 
+ * @brief 
+ * 対象のタスクをスリープさせる
+ * @param task スリープさせるタスク
+ */
+void TaskManager::Sleep(Task* task) {
+  // スリープしたいタスクをRunキューから取り出し
+  auto it = std::find(running_.begin(), running_.end(), task);
+
+  // タスクが実行中であれば、スリープさせるためにコンテキストスイッチする
+  if (it == running_.begin()) {
+    SwitchTask(true);
+    return;
   }
 
-  Task& current_task = *tasks_[current_task_index_];
-  Task& next_task = *tasks_[next_task_index];
-  // 現在のタスクを置き換え
-  current_task_index_ = next_task_index;
+  // タスクが見つからない場合は、スキップ
+  if (it == running_.end()) {
+    return;
+  }
 
-  SwitchContext(&next_task.Context(), &current_task.Context());
+  // Runキューからスリープさせるタスクを削除
+  running_.erase(it);
+}
+
+/**
+ * @fn
+ * TaskManager::Sleepメソッド
+ * @brief 
+ * 対象のタスクIDのタスクをスリープさせる
+ * @param id スリープさせるタスクのタスクID
+ * @return Error 成功した場合は、kSuccess。対象のタスクIDがない場合は、Error::kNoSuchTask
+ */
+Error TaskManager::Sleep(uint64_t id) {
+  // タスクリストの中から、指定したタスクIDのタスクを取り出し
+  auto it = std::find_if(tasks_.begin(), tasks_.end(),
+                         [id](const auto& t){ return t->ID() == id; });
+  if (it == tasks_.end()) {
+    return MAKE_ERROR(Error::kNoSuchTask);
+  }
+
+  Sleep(it->get());
+  return MAKE_ERROR(Error::kSuccess);
+}
+
+/**
+ * @fn
+ * TaskManager::Wakeupメソッド
+ * 
+ * @brief 
+ * スリープ状態のタスクを実行可能状態へ戻す
+ * @param task 実行可能状態にもどすタスク
+ */
+void TaskManager::Wakeup(Task* task) {
+  // 対象のタスクをRunキューにないか探す
+  auto it = std::find(running_.begin(), running_.end(), task);
+  if (it == running_.end()) {
+    // Runキューに入っていない場合は、スリープ状態のため、Runキューに加えて実行可能状態にする。
+    running_.push_back(task);
+  }
+}
+
+/**
+ * @fn
+ * TaskManager::Wakeupメソッド
+ * 
+ * @brief 
+ * スリープ状態のタスクを実行可能状態へ戻す
+ * @param id タスクID
+ * @return Error 成功した場合は、kSuccess。対象のタスクIDがない場合は、Error::kNoSuchTask
+ */
+Error TaskManager::Wakeup(uint64_t id) {
+  // タスクリストの中から、指定したタスクIDのタスクを取り出し
+  auto it = std::find_if(tasks_.begin(), tasks_.end(),
+                         [id](const auto& t){ return t->ID() == id; });
+  if (it == tasks_.end()) {
+    return MAKE_ERROR(Error::kNoSuchTask);
+  }
+
+  Wakeup(it->get());
+  return MAKE_ERROR(Error::kSuccess);
 }
 
 TaskManager* task_manager;

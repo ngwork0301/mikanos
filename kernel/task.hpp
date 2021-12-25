@@ -8,6 +8,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <error.hpp>
 #include <vector>
 
 /**
@@ -40,6 +42,10 @@ class Task {
     Task(uint64_t id);
     Task& InitContext(TaskFunc* f, int64_t data);
     TaskContext& Context();
+
+    uint64_t ID() const;
+    Task& Sleep();
+    Task& Wakeup();
   
   private:
     //! タスクID
@@ -61,15 +67,19 @@ class TaskManager {
   public:
     TaskManager();
     Task& NewTask();
-    void SwitchTask();
+    void SwitchTask(bool current_sleep = false);
 
+    void Sleep(Task* task);
+    Error Sleep(uint64_t id);
+    void Wakeup(Task* task);
+    Error Wakeup(uint64_t id);
   private:
     //! タスクインスタンスのリスト
     std::vector<std::unique_ptr<Task>> tasks_{};
     //! 付与されている最新のタスクID
     uint64_t latest_id_{0};
-    //! 現在のタスクのインデックス
-    size_t current_task_index_{0};
+    //! Runキュー
+    std::deque<Task*> running_{};
 };
 
 extern TaskManager* task_manager;

@@ -8,6 +8,7 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <limits>
 #include <queue>
 #include <vector>

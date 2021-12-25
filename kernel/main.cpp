@@ -340,9 +340,12 @@ extern "C" void KernelMainNewStack(
   // タスクタイマーの初期化。
   // 呼び出し直後からタスク切換えが発生するため、他の初期化処理完了後に呼び出すこと
   InitializeTask();
-  task_manager->NewTask().InitContext(TaskB, 45);
-  task_manager->NewTask().InitContext(TaskIdle, 0xdeadbeef);
-  task_manager->NewTask().InitContext(TaskIdle, 0xcafebabe);
+  const uint64_t taskb_id = task_manager->NewTask()
+    .InitContext(TaskB, 45)
+    .Wakeup()
+    .ID();
+  task_manager->NewTask().InitContext(TaskIdle, 0xdeadbeef).Wakeup();
+  task_manager->NewTask().InitContext(TaskIdle, 0xcafebabe).Wakeup();
 
   // キューにたまったイベントを処理するイベントループ
   while(true) {
@@ -398,6 +401,12 @@ extern "C" void KernelMainNewStack(
         if (msg.arg.keyboard.ascii != 0) {
           // テキストボックス内に描画
           InputTextWindow(msg.arg.keyboard.ascii);
+          // sキーを入力したとき、TaskBをスリープさせる
+          if (msg.arg.keyboard.ascii == 's') {
+            printk("Sleep TaskB: %s\n", task_manager->Sleep(taskb_id).Name());
+          } else if(msg.arg.keyboard.ascii == 'w') {
+            printk("wakeup TaskB: %s\n", task_manager->Wakeup(taskb_id).Name());
+          }
         }
         break;
       // どれにも該当しないイベント型だった場合
