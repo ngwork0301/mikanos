@@ -60,8 +60,6 @@ extern "C" void __cxa_pure_virtual() { while (1); }
 std::shared_ptr<Window> main_window;
 //! メインウィンドウのID
 unsigned int main_window_layer_id;
-//! MSI割り込みイベント処理につかうキュー
-std::deque<Message>* main_queue;
 //! テキストボックスへの共有ポインタ
 std::shared_ptr<Window> text_window;
 //! テキストボックスのID
@@ -293,16 +291,11 @@ extern "C" void KernelMainNewStack(
   // メモリ管理の初期化
   InitializeMemoryManager(memory_map);
 
-  // イベント処理のためのメインキューのインスタンス化
-  ::main_queue = new std::deque<Message>(32);
-
   // 割り込み処理を初期化
-  InitializeInterrupt(main_queue);
+  InitializeInterrupt();
 
   // PCIバスをスキャンしてデバイスをロードする。
   InitializePCI();
-  // xHCIマウスデバイスを探し出して初期化
-  usb::xhci::Initialize();
 
   // layer_managerの初期化とデスクトップ背景、コンソールなど初期レイヤーの初期化
   InitializeLayer();
@@ -312,40 +305,44 @@ extern "C" void KernelMainNewStack(
   InitializeTextWindow();
   // TaskBウィンドウの初期化と描画
   InitializeTaskBWindow();
-  // マウスウィンドウの初期化と描画
-  InitializeMouse();
 
   // 全体の描画
   layer_manager->Draw({{0, 0}, ScreenSize()});
 
   // タイマー割り込み処理の初期化
   acpi::Initialize(acpi_table);
-  InitializeLAPICTimer(*main_queue);
+  InitializeLAPICTimer();
 
-  // キーボードの初期化
-  InitializeKeyboard(*main_queue);
 
   // 0.5秒でカーソルを点滅させる
   //! カーソル点滅のためのタイマーであることをしめす値としていれておく
   const int kTextboxCursorTimer = 1;
   const int kTimer05Sec = static_cast<int>(kTimerFreq * 0.5);
-  __asm__("cli");  // 割り込みを禁止
   timer_manager->AddTimer(Timer{kTimer05Sec, kTextboxCursorTimer});
-  __asm__("sti");  // 割り込みを許可
   bool textbox_cursor_visible = false;
 
-  // メインウィンドウに表示するカウンタ変数を初期化
-  char str[128];
 
   // タスクタイマーの初期化。
   // 呼び出し直後からタスク切換えが発生するため、他の初期化処理完了後に呼び出すこと
   InitializeTask();
+  Task& main_task = task_manager->CurrentTask();
   const uint64_t taskb_id = task_manager->NewTask()
     .InitContext(TaskB, 45)
     .Wakeup()
     .ID();
   task_manager->NewTask().InitContext(TaskIdle, 0xdeadbeef).Wakeup();
   task_manager->NewTask().InitContext(TaskIdle, 0xcafebabe).Wakeup();
+
+  // 以降の割り込みがあるものの初期化は、タスク機能の初期化がおわってから
+  // xHCIマウスデバイスを探し出して初期化
+  usb::xhci::Initialize();
+  // マウスウィンドウの初期化と描画
+  InitializeMouse();
+  // キーボードの初期化
+  InitializeKeyboard();
+
+  // メインウィンドウに表示するカウンタ変数を初期化
+  char str[128];
 
   // キューにたまったイベントを処理するイベントループ
   while(true) {
@@ -363,18 +360,17 @@ extern "C" void KernelMainNewStack(
     // cliオペランドで割り込みを一時的に受け取らないようにする
     __asm__("cli");
     // イベントがキューに溜まっていない場合は、割り込みを受け取る状態にして停止させる
-    if (main_queue->size() == 0) {
-      __asm__("sti\n\thlt");
+    auto msg = main_task.ReceiveMessage();
+    if (!msg) {
+      main_task.Sleep();
+      __asm__("sti");
       continue;
     }
 
-    // キューからメッセージを１つ取り出し
-    Message msg = main_queue->front();
-    main_queue->pop_front();
     // MSI割り込み受け付けを再開
     __asm__("sti");
 
-    switch (msg.type) {
+    switch (msg->type) {
       // XHCIからのマウスイベントの場合
       case Message::kInterruptXHCI:
         usb::xhci::ProcessEvents();
@@ -385,10 +381,10 @@ extern "C" void KernelMainNewStack(
         break;
       // タイマーがタイムアウトしたときのイベント
       case Message::kTimerTimeout:
-        if (msg.arg.timer.value  == kTextboxCursorTimer) {
+        if (msg->arg.timer.value  == kTextboxCursorTimer) {
           __asm__("cli");  // 割り込み禁止
           timer_manager->AddTimer(
-              Timer{msg.arg.timer.timeout + kTimer05Sec, kTextboxCursorTimer});
+              Timer{msg->arg.timer.timeout + kTimer05Sec, kTextboxCursorTimer});
           __asm__("sti"); // 割り込み許可
           // 点滅のため、割り込みのたびに反転
           textbox_cursor_visible = !textbox_cursor_visible;
@@ -398,20 +394,20 @@ extern "C" void KernelMainNewStack(
         break;
       // キーボード入力イベントの場合
       case Message::kKeyPush:
-        if (msg.arg.keyboard.ascii != 0) {
+        if (msg->arg.keyboard.ascii != 0) {
           // テキストボックス内に描画
-          InputTextWindow(msg.arg.keyboard.ascii);
+          InputTextWindow(msg->arg.keyboard.ascii);
           // sキーを入力したとき、TaskBをスリープさせる
-          if (msg.arg.keyboard.ascii == 's') {
+          if (msg->arg.keyboard.ascii == 's') {
             printk("Sleep TaskB: %s\n", task_manager->Sleep(taskb_id).Name());
-          } else if(msg.arg.keyboard.ascii == 'w') {
-            printk("wakeup TaskB: %s\n", task_manager->Wakeup(taskb_id).Name());
+          } else if(msg->arg.keyboard.ascii == 'w') {
+            printk("Wakeup TaskB: %s\n", task_manager->Wakeup(taskb_id).Name());
           }
         }
         break;
       // どれにも該当しないイベント型だった場合
       default:
-        Log(kError, "Unknown message type: %d\n", msg.type);
+        Log(kError, "Unknown message type: %d\n", msg->type);
     }
   }
 

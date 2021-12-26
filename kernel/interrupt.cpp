@@ -7,6 +7,7 @@
 
 #include "asmfunc.h"
 #include "segment.hpp"
+#include "task.hpp"
 #include "timer.hpp"
 
 //! IDT（割り込み記述子テーブル：Interrupt descriptor table）
@@ -48,7 +49,6 @@ void NotifyEndOfInterrupt() {
 }
 
 namespace {
-  std::deque<Message>* msg_queue;
 
   /**
    * @fn
@@ -61,8 +61,8 @@ namespace {
    */
   __attribute__((interrupt))
   void IntHandlerXHCI(InterruptFrame* frame) {
-    // イベントをキューに溜める
-    msg_queue->push_back(Message{Message::kInterruptXHCI});
+    // メインタスク(タスクID=1)のイベントキューにメッセージを送る
+    task_manager->SendMessage(1, Message{Message::kInterruptXHCI});
     // 割り込み処理が終わったことを通知
     NotifyEndOfInterrupt();
   }
@@ -89,8 +89,7 @@ namespace {
  * @brief
  * 割り込み処理を初期化する
  */
-void InitializeInterrupt(std::deque<Message>* msg_queue) {
-  ::msg_queue = msg_queue;
+void InitializeInterrupt() {
 
   // 割り込み記述子IDTを設定
   // DPLは0固定で設定

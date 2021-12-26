@@ -19,9 +19,9 @@ namespace {
  * @brief
  * APICタイマーを初期化する
  */
-void InitializeLAPICTimer(std::deque<Message>& msg_queue){
+void InitializeLAPICTimer(){
   // TimerManagerインスタンスを生成
-  timer_manager = new TimerManager{msg_queue};
+  timer_manager = new TimerManager;
 
   divide_config = 0b1011; // divide 1:1 分周比は1対1でそのまま減少させる
   // lvt_timer = (0b001 << 16) | 32;  // masked, one-shot
@@ -98,8 +98,7 @@ Timer::Timer(unsigned long timeout, int value)
  * @brief
  * TimerManagerインスタンスを生成する
  */
-TimerManager::TimerManager(std::deque<Message>& msg_queue)
-    : msg_queue_{msg_queue} {
+TimerManager::TimerManager() {
   // 番兵として１番タイムアウト値の大きなタイマーインスタンスを加えておく
   timers_.push(Timer{std::numeric_limits<unsigned long>::max(), -1});
 }
@@ -141,7 +140,7 @@ bool TimerManager::Tick() {
     if (t.Value() == kTaskTimerValue) {
       // フラグを立てるだけ
       task_timer_timeout = true;
-      // メインキューに入れないでスキップして入れ直し。
+      // イベントキューに入れないでスキップして入れ直し。
       timers_.pop();
       timers_.push(Timer{tick_ + kTaskTimerPeriod, kTaskTimerValue});
       continue;
@@ -150,8 +149,8 @@ bool TimerManager::Tick() {
     Message m{Message::kTimerTimeout};
     m.arg.timer.timeout = t.Timeout();
     m.arg.timer.value = t.Value();
-    // メインキューに情報を加えてkTimerTimeoutメッセージを入れる
-    msg_queue_.push_back(m);
+    // メインタスク(ID=1)のイベントキューにkTimerTimeoutメッセージを入れる
+    task_manager->SendMessage(1, m);
 
     // タイムアウトしたのでtimers_からこのタイマーを取り除く
     timers_.pop();

@@ -1,6 +1,7 @@
 #include "task.hpp"
 
 #include "asmfunc.h"
+#include "error.hpp"
 #include "segment.hpp"
 #include "timer.hpp"
 
@@ -11,7 +12,7 @@
  * @brief Construct a new Task:: Task object
  * @param id_ タスクID
  */
-Task::Task(uint64_t id) : id_{id} {
+Task::Task(uint64_t id) : id_{id}, msgs_{} {
 }
 
 /**
@@ -96,6 +97,37 @@ Task& Task::Wakeup() {
   return *this;
 }
 
+/**
+ * @fn
+ * Task::SendMessageメソッド
+ * 
+ * @brief 
+ * このタスクのイベントキューにメッセージを送る
+ * このタスクが寝ていれば起こす
+ * @param msg メッセージインスタンス
+ */
+void Task::SendMessage(const Message& msg) {
+  msgs_.push_back(msg);
+  Wakeup();
+}
+
+/**
+ * @fn
+ * Task::ReceiveMessageメソッド
+ * 
+ * @brief 
+ * イベントキューからメッセージを一つ取り出す
+ * @return std::optional<Message> 無効値付きのMessageインスタンス
+ */
+std::optional<Message> Task::ReceiveMessage() {
+  if (msgs_.empty()) {
+    return std::nullopt;
+  }
+
+  auto m = msgs_.front();
+  msgs_.pop_front();
+  return m;
+}
 
 /**
  * @fn
@@ -225,6 +257,41 @@ Error TaskManager::Wakeup(uint64_t id) {
 
   Wakeup(it->get());
   return MAKE_ERROR(Error::kSuccess);
+}
+
+/**
+ * @fn
+ * TaskManager::SendMessageメソッド
+ * 
+ * @brief 
+ * 指定したタスクIDのタスクのイベントキューにメッセージを追加。タスクは寝ていれば起こす
+ * @param id タスクID
+ * @param msg 追加するメッセージインスタンス
+ * @return Error 指定したタスクが見つからなかったらError:::kNoSuchTask。成功したらError::kSuccess
+ */
+Error TaskManager::SendMessage(uint64_t id, const Message& msg) {
+  // 指定したタスクIDのタスクインスタンスを取得
+  auto it = std::find_if(tasks_.begin(), tasks_.end(),
+                         [id](const auto& t){ return t->ID() == id; });
+  // タスクが見つからなかったときはエラー
+  if (it == tasks_.end()) {
+    return MAKE_ERROR(Error::kNoSuchTask);
+  }
+
+  (*it)->SendMessage(msg);
+  return MAKE_ERROR(Error::kSuccess);
+}
+
+/**
+ * @fn
+ * TaskManager::CurrentTaskメソッド
+ * 
+ * @brief 
+ * 現在実行中のタスクのインスタンスを返す
+ * @return Task& 現在実行中のタスク
+ */
+Task& TaskManager::CurrentTask() {
+  return *running_.front();
 }
 
 TaskManager* task_manager;
