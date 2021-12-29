@@ -5,6 +5,26 @@
 #include "segment.hpp"
 #include "timer.hpp"
 
+// ユーティリティ関数
+namespace {
+  /**
+   * @fn
+   * Erase関数
+   * 
+   * @brief 
+   * 第一引数の配列(Runキューなど)から対象の要素を取り除く
+   * @tparam T 削除対象の配列の型
+   * @tparam U 削除対象の要素の型
+   * @param c 削除対象の配列
+   * @param value 削除対象の要素
+   */
+  template <class T, class U>
+  void Erase(T& c, const U& value) {
+    auto it = std::remove(c.begin(), c.end(), value);
+    c.erase(it, c.end());
+  }
+} // namespace
+
 /**
  * @fn
  * Task::Taskコンストラクタ
@@ -13,17 +33,6 @@
  * @param id_ タスクID
  */
 Task::Task(uint64_t id) : id_{id}, msgs_{} {
-}
-
-/**
- * @fn
- * Task::Contextメソッド
- * @brief 
- * getterメソッド。このタスクのコンテキスト構造体を返す
- * @return TaskContext& 
- */
-TaskContext& Task::Context() {
-  return context_;
 }
 
 /**
@@ -57,6 +66,17 @@ Task& Task::InitContext(TaskFunc* f, int64_t data) {
   *reinterpret_cast<uint32_t*>(&context_.fxsave_area[24]) = 0x1f80;
 
   return *this;
+}
+
+/**
+ * @fn
+ * Task::Contextメソッド
+ * @brief 
+ * getterメソッド。このタスクのコンテキスト構造体を返す
+ * @return TaskContext& 
+ */
+TaskContext& Task::Context() {
+  return context_;
 }
 
 /**
@@ -135,8 +155,13 @@ std::optional<Message> Task::ReceiveMessage() {
  * @brief Construct a new Task Manager:: Task Manager object
  */
 TaskManager::TaskManager() {
-  // これを呼び出した今実行中のコンテキストをタスクインスタンスとしてRunキューに登録しておく。
-  running_.push_back(&NewTask());
+  // これを呼び出した今実行中のコンテキストをタスクインスタンスとして生成
+  Task& task = NewTask()
+    .SetLevel(current_level_)
+    .SetRunning(true);
+
+  // 現在処理しているレベルのRunキューにタスクを追加
+  running_[current_level_].push_back(&task);
 }
 
 /**
@@ -161,14 +186,31 @@ Task& TaskManager::NewTask() {
  */
 void TaskManager::SwitchTask(bool current_sleep) {
   // Runキューから最前のタスクを取り出し
-  Task* current_task = running_.front();
-  running_.pop_front();
+  auto& level_queue = running_[current_level_];
+  Task* current_task = level_queue.front();
+  level_queue.pop_front();
   if (!current_sleep) {
     // スリープしないのであれば、Runキューの末尾に再度タスクを入れる
-    running_.push_back(current_task);
+    level_queue.push_back(current_task);
+  }
+  if (level_queue.empty()) {
+    // このレベルのRunキューが空になったら、レベルの変更
+    level_changed_ = true;
+  }
+
+  if (level_changed_) {
+    // レベルの変更フラグをfalseに戻す
+    level_changed_ = false;
+    // 最高レベルから順に下げていく
+    for (int lv = kMaxLevel; lv >= 0; --lv) {
+      if (!running_[lv].empty()) {
+        current_level_ = lv;
+        break;
+      }
+    }
   }
   // 次のタスク
-  Task* next_task = running_.front();
+  Task* next_task = running_[current_level_].front();
 
   // 現在のタスクと次のタスクのコンテキストの切り替え
   SwitchContext(&next_task->Context(), &current_task->Context());
@@ -183,22 +225,19 @@ void TaskManager::SwitchTask(bool current_sleep) {
  * @param task スリープさせるタスク
  */
 void TaskManager::Sleep(Task* task) {
-  // スリープしたいタスクをRunキューから取り出し
-  auto it = std::find(running_.begin(), running_.end(), task);
-
-  // タスクが実行中であれば、スリープさせるためにコンテキストスイッチする
-  if (it == running_.begin()) {
-    SwitchTask(true);
+  // すでにスリープしてあれば、即return
+  if (!task->Running()) {
     return;
   }
 
-  // タスクが見つからない場合は、スキップ
-  if (it == running_.end()) {
+  task->SetRunning(false);
+  if (task == running_[current_level_].front()) {
+    // 現在実行中の場合は、スリープさせるために次のタスクへ即時コンテキストスイッチする
+    SwitchTask(true);  // bool引数は、切り替え元のタスクをスリープさせるかどうか
     return;
   }
-
   // Runキューからスリープさせるタスクを削除
-  running_.erase(it);
+  Erase(running_[task->Level()], task);
 }
 
 /**
@@ -226,16 +265,32 @@ Error TaskManager::Sleep(uint64_t id) {
  * TaskManager::Wakeupメソッド
  * 
  * @brief 
- * スリープ状態のタスクを実行可能状態へ戻す
- * @param task 実行可能状態にもどすタスク
+ * スリープ状態のタスクを指定したレベルで実行可能状態へ戻す。
+ * レベルの変更も必要に応じておこなう。
+ * @param [in] task 実行可能状態にもどすタスク
+ * @param [in] level 起床する対象のタスクのレベル。0未満の数値を入れた場合は、そのタスクの従来のレベルを使用する
  */
-void TaskManager::Wakeup(Task* task) {
-  // 対象のタスクをRunキューにないか探す
-  auto it = std::find(running_.begin(), running_.end(), task);
-  if (it == running_.end()) {
-    // Runキューに入っていない場合は、スリープ状態のため、Runキューに加えて実行可能状態にする。
-    running_.push_back(task);
+void TaskManager::Wakeup(Task* task, int level) {
+  if (task->Running()) {
+    // 対象のタスクが実行中の場合、動作中のレベル変更のため、ChangeLevelRuninngメソッドで処理
+    ChangeLevelRunning(task, level);
+    return;
   }
+  if (level < 0) {
+    // levelに0未満の数値を入れた場合は、指定したタスクにもともと設定されていたレベルをつかう
+    level = task->Level();
+  }
+
+  task->SetLevel(level);
+  task->SetRunning(true);
+
+  // 指定したタスクをRunキューに加えて、実行可能状態にする。
+  running_[level].push_back(task);
+  if (level > current_level_) {
+    // レベルの変更があった場合はフラグを立てて、つぎのSwitchTaskメソッドでレベル変更
+    level_changed_ = true;
+  }
+  return;
 }
 
 /**
@@ -243,11 +298,12 @@ void TaskManager::Wakeup(Task* task) {
  * TaskManager::Wakeupメソッド
  * 
  * @brief 
- * スリープ状態のタスクを実行可能状態へ戻す
- * @param id タスクID
+ * スリープ状態のタスクを指定したレベルの実行可能状態へ戻す
+ * @param [in] id タスクID
+ * @param [in] level 変更先のレベル
  * @return Error 成功した場合は、kSuccess。対象のタスクIDがない場合は、Error::kNoSuchTask
  */
-Error TaskManager::Wakeup(uint64_t id) {
+Error TaskManager::Wakeup(uint64_t id, int level) {
   // タスクリストの中から、指定したタスクIDのタスクを取り出し
   auto it = std::find_if(tasks_.begin(), tasks_.end(),
                          [id](const auto& t){ return t->ID() == id; });
@@ -255,7 +311,7 @@ Error TaskManager::Wakeup(uint64_t id) {
     return MAKE_ERROR(Error::kNoSuchTask);
   }
 
-  Wakeup(it->get());
+  Wakeup(it->get(), level);
   return MAKE_ERROR(Error::kSuccess);
 }
 
@@ -291,7 +347,55 @@ Error TaskManager::SendMessage(uint64_t id, const Message& msg) {
  * @return Task& 現在実行中のタスク
  */
 Task& TaskManager::CurrentTask() {
-  return *running_.front();
+  return *running_[current_level_].front();
+}
+
+/**
+ * @fn
+ * TaskManager::ChangeLevelRunningメソッド
+ * 
+ * @brief 
+ * 実行中のタスクのレベル変更
+ * @param [in] task 変更対象のタスク
+ * @param [in] level 変更先レベル
+ */
+void TaskManager::ChangeLevelRunning(Task* task, int level){
+  if (level < 0 || level == task->Level()) {
+    // レベルの変更がない場合はなにもしない
+    return;
+  }
+
+  // 実行中のタスクではない場合
+  if (task != running_[current_level_].front()){
+    // change level of other task
+    // 指定したタスクを実行中のレベルのRunキューから削除
+    Erase(running_[task->Level()], task);
+    // 変更先のレベルのRunキューに対象のタスクを追加
+    running_[level].push_back(task);
+    task->SetLevel(level);
+    if (level > current_level_) {
+      // レベルの変更があった場合は、次のSwitchTaskで変更
+      level_changed_ = true;
+    }
+    return;
+  }
+
+  // 実行中のタスクの場合
+  // change level myself
+  // 現在のレベルのRunキューから現在のタスクを取り出し
+  running_[current_level_].pop_front();
+  // 変更先のレベルのRunキューの最前(実行中のため)に対象のタスクを追加
+  running_[level].push_front(task);
+  task->SetLevel(level);
+  if (level >= current_level_) {
+    current_level_ = level;
+  } else {
+    // レベルを下げたときは、実行中のタスクを終えたら、次のSwitchTaskメソッドで
+    // もともとの上のレベルのRunキューに他のタスクがあればレベルを戻す必要があるので
+    // レベル変更フラグを立てておく。
+    current_level_ = level;
+    level_changed_ = true;
+  }
 }
 
 TaskManager* task_manager;

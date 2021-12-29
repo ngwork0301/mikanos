@@ -32,6 +32,8 @@ struct TaskContext {
 
 using TaskFunc = void (uint64_t, uint64_t);
 
+class TaskManager;
+
 /**
  * @class
  * Taskクラス
@@ -41,6 +43,7 @@ using TaskFunc = void (uint64_t, uint64_t);
  */
 class Task {
   public:
+    static const int kDefaultLevel = 1;
     static const size_t kDefaultStackBytes = 4096;
     Task(uint64_t id);
     Task& InitContext(TaskFunc* f, int64_t data);
@@ -52,6 +55,8 @@ class Task {
 
     void SendMessage(const Message& msg);
     std::optional<Message> ReceiveMessage();
+    bool Running() { return running_; }
+    unsigned int Level() { return level_; }
   
   private:
     //! タスクID
@@ -62,6 +67,15 @@ class Task {
     alignas(16) TaskContext context_;
     //! このタスクのコンテキスト内でつかうイベントキュー
     std::deque<Message> msgs_;
+    //! このタスクの現在のレベル
+    unsigned int level_{kDefaultLevel};
+    //! このタスクが実行状態／実行可能状態であるか
+    bool running_{false};
+
+    Task& SetLevel(int level) { level_ = level; return *this; }
+    Task& SetRunning(bool running) { running_ = running; return *this; }
+
+    friend TaskManager;
 };
 
 /**
@@ -73,14 +87,17 @@ class Task {
  */
 class TaskManager {
   public:
+    // level: 0 = Lowest, kMaxLevel = highest
+    static const int kMaxLevel = 3;
+
     TaskManager();
     Task& NewTask();
     void SwitchTask(bool current_sleep = false);
 
     void Sleep(Task* task);
     Error Sleep(uint64_t id);
-    void Wakeup(Task* task);
-    Error Wakeup(uint64_t id);
+    void Wakeup(Task* task, int level = -1);
+    Error Wakeup(uint64_t id, int level = -1);
     Error SendMessage(uint64_t id, const Message& msg);
     Task& CurrentTask();
   private:
@@ -88,8 +105,14 @@ class TaskManager {
     std::vector<std::unique_ptr<Task>> tasks_{};
     //! 付与されている最新のタスクID
     uint64_t latest_id_{0};
-    //! Runキュー
-    std::deque<Task*> running_{};
+    //! レベルごとのRunキューの集合
+    std::array<std::deque<Task*>, kMaxLevel + 1> running_{};
+    //! 現在タスクマネージャが処理しているレベル
+    int current_level_{kMaxLevel};
+    //! レベルの変更フラグ
+    bool level_changed_{false};
+
+    void ChangeLevelRunning(Task* task, int level);
 };
 
 extern TaskManager* task_manager;
