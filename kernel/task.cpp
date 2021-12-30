@@ -5,7 +5,6 @@
 #include "segment.hpp"
 #include "timer.hpp"
 
-// ユーティリティ関数
 namespace {
   /**
    * @fn
@@ -22,6 +21,20 @@ namespace {
   void Erase(T& c, const U& value) {
     auto it = std::remove(c.begin(), c.end(), value);
     c.erase(it, c.end());
+  }
+
+  /**
+   * @fn
+   * TaskIdle関数
+   * 
+   * @brief 
+   * アイドルタスクの動作の中身を実装。
+   * 永遠にhltオペランドを実行する。
+   * @param task_id タスクID
+   * @param data タスクが使用するデータ。このタスクでは未使用
+   */
+  void TaskIdle(uint64_t task_id, int64_t data) {
+    while (true) __asm__("hlt");
   }
 } // namespace
 
@@ -159,9 +172,17 @@ TaskManager::TaskManager() {
   Task& task = NewTask()
     .SetLevel(current_level_)
     .SetRunning(true);
-
   // 現在処理しているレベルのRunキューにタスクを追加
   running_[current_level_].push_back(&task);
+
+  // Runキューが空にならないように、アイドルタスクはかならず一番下のレベルで動くようにする。
+  Task& idle = NewTask()
+    .InitContext(TaskIdle, 0)
+    .SetLevel(0)
+    .SetRunning(true);
+  // 一番下のレベルのRunキュー(レベル0:アイドルタスク専用)にアイドルタスクを追加
+  running_[0].push_back(&idle);
+
 }
 
 /**

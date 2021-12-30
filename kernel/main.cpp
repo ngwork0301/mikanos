@@ -205,7 +205,7 @@ int printk(const char* format, ...) {
  * @param [in] task_id タスクID
  * @param [in] data タスクにつかうデータ
  */
-void TaskB(uint64_t task_id, uint64_t data) {
+void TaskB(uint64_t task_id, int64_t data) {
   printk("TaskB: task_id=%lu, data=%lu\n", task_id, data);
   char str[128];
   int count = 0;
@@ -219,18 +219,6 @@ void TaskB(uint64_t task_id, uint64_t data) {
     WriteString(*task_b_window->Writer(), {24, 28}, str, {0, 0, 0});
     layer_manager->Draw(task_b_window_layer_id);
   }
-}
-
-/**
- * @fn
- * TaskIdle関数
- * 
- * @brief 
- * タスク切り替えの実験用のなにもしない関数
- */
-void TaskIdle(uint64_t task_id, uint64_t data) {
-  printk("TaskIdle: task_id = %lu, data = %lx\n", task_id, data);
-  while (true) __asm__("hlt");
 }
 
 /**
@@ -330,8 +318,6 @@ extern "C" void KernelMainNewStack(
     .InitContext(TaskB, 45)
     .Wakeup()
     .ID();
-  task_manager->NewTask().InitContext(TaskIdle, 0xdeadbeef).Wakeup();
-  task_manager->NewTask().InitContext(TaskIdle, 0xcafebabe).Wakeup();
 
   // 以降の割り込みがあるものの初期化は、タスク機能の初期化がおわってから
   // xHCIマウスデバイスを探し出して初期化
