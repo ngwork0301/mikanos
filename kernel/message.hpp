@@ -8,6 +8,16 @@
 #pragma once
 
 /**
+ * @struct 
+ * LayerOperation構造体
+ * @brief 
+ * レイヤー操作の種類をenumで定義
+ */
+enum class LayerOperation {
+  Move, MoveRelative, Draw
+};
+
+/**
  * @struct
  * Message構造体
  * 
@@ -20,7 +30,12 @@ struct Message {
     kInterruptLAPICTimer,
     kTimerTimeout,
     kKeyPush,
+    kLayer,
+    kLayerFinish,
   } type;
+
+  //! kLayer, kLayerFinishでつかう送信元タスクのID
+  uint64_t src_task;
 
   union {
     struct {
@@ -33,5 +48,11 @@ struct Message {
       uint8_t keycode;
       char ascii;
     } keyboard;
+
+    struct {
+      LayerOperation op;
+      unsigned int layer_id;
+      int x, y;
+    } layer;
   } arg;
 };

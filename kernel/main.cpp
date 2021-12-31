@@ -209,6 +209,12 @@ void TaskB(uint64_t task_id, int64_t data) {
   printk("TaskB: task_id=%lu, data=%lu\n", task_id, data);
   char str[128];
   int count = 0;
+
+  // タスクインスタンスを取得する
+  __asm__("cli"); // 割り込み禁止
+  Task& task = task_manager->CurrentTask();
+  __asm__("sti"); // 割り込み許可
+
   // 無限ループ
   while (true) {
     ++count;
@@ -217,7 +223,30 @@ void TaskB(uint64_t task_id, int64_t data) {
     FillRectangle(*task_b_window->Writer(), {24, 28}, {8 * 10, 16}, {0xc6, 0xc6, 0xc6});
     // 文字列を描画
     WriteString(*task_b_window->Writer(), {24, 28}, str, {0, 0, 0});
-    layer_manager->Draw(task_b_window_layer_id);
+
+    // メインタスクに描画イベントを送る
+    Message msg{Message::kLayer, task_id};
+    msg.arg.layer.layer_id = task_b_window_layer_id;
+    msg.arg.layer.op = LayerOperation::Draw;
+    __asm__("cli"); // 割り込み禁止
+    task_manager->SendMessage(1, msg);
+    __asm__("sti"); // 割り込み許可
+
+    // メインタスク側で描画が終わったことを確認
+    while (true) {
+      __asm__("cli"); // 割り込み禁止
+      auto msg = task.ReceiveMessage();
+      if (!msg) {
+        task.Sleep();
+        __asm("sti"); // 割り込み許可
+        continue;
+      }
+
+      if (msg->type == Message::kLayerFinish) {
+        __asm("sti"); // 割り込み許可
+        break;
+      }
+    }
   }
 }
 
@@ -390,6 +419,14 @@ extern "C" void KernelMainNewStack(
             printk("Wakeup TaskB: %s\n", task_manager->Wakeup(taskb_id).Name());
           }
         }
+        break;
+      // レイヤー操作イベントの場合
+      case Message::kLayer:
+        ProcessLayerMessage(*msg);
+        __asm__("cli");  // 割り込み禁止
+        // Layer操作が終了したことを呼び出し元のタスクに通知
+        task_manager->SendMessage(msg->src_task, Message{Message::kLayerFinish});
+        __asm__("sti");  // 割り込み許可
         break;
       // どれにも該当しないイベント型だった場合
       default:
