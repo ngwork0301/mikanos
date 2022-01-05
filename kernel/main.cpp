@@ -57,121 +57,19 @@ extern "C" void __cxa_pure_virtual() { while (1); }
  * グローバル変数
  */
 //! メインウィンドウへの共有ポインタ
-std::shared_ptr<Window> main_window;
+std::shared_ptr<ToplevelWindow> main_window;
 //! メインウィンドウのID
 unsigned int main_window_layer_id;
 //! テキストボックスへの共有ポインタ
-std::shared_ptr<Window> text_window;
+std::shared_ptr<ToplevelWindow> text_window;
 //! テキストボックスのID
 unsigned int text_window_layer_id;
 //! テキストボックス内のインデックス
 int text_window_index;
 //! TaskB()用のウィンドウ
-std::shared_ptr<Window> task_b_window;
+std::shared_ptr<ToplevelWindow> task_b_window;
 //! TaskB()ウィンドウのレイヤーID
 unsigned int task_b_window_layer_id;
-
-/**
- * @fn
- * InitializeTaskBWindow関数
- * 
- * @brief 
- * TaskB()を実行するウィンドウを初期化する
- */
-void InitializeTaskBWindow() {
-  task_b_window = std::make_shared<Window>(
-      160, 52, screen_config.pixel_format);
-  DrawWindow(*task_b_window->Writer(), "TaskB Window");
-
-  task_b_window_layer_id = layer_manager->NewLayer()
-    .SetWindow(task_b_window)
-    .SetDraggable(true)
-    .Move({100, 100})
-    .ID();
-  
-  layer_manager->UpDown(task_b_window_layer_id, std::numeric_limits<int>::max());
-}
-
-/**
- * @fn
- * InitializeTextWindow関数
- * 
- * @brief 
- * テキストボックスを初期化する。
- */
-void InitializeTextWindow() {
-  //! ウィンドウの横幅
-  const int win_w = 160;
-  //! ウィンドウの高さ
-  const int win_h = 52;
-
-  text_window = std::make_shared<Window>(
-      win_w, win_h, screen_config.pixel_format);
-  DrawWindow(*text_window->Writer(), "Text Box Test");
-  DrawTextbox(*text_window->Writer(), {4, 24}, {win_w -8, win_h - 24 - 4});
-
-  // レイヤーを生成
-  text_window_layer_id = layer_manager->NewLayer()
-    .SetWindow(text_window)
-    .SetDraggable(true)
-    .Move({350, 200})
-    .ID();
-
-  // レイヤーマネージャにレイヤーを追加して描画
-  layer_manager->UpDown(text_window_layer_id, std::numeric_limits<int>::max());
-}
-
-/**
- * @fn
- * DrawTextCursor関数
- * 
- * @brief 
- * テキストボックス内のカーソルの表示・非表示を切り替える。
- * 表示の場合は、黒。非表示の場合は白で塗りつぶし。
- * @param [in] visible 表示=true, 非表示=false 
- */
-void DrawTextCursor(bool visible) {
-  const auto color = visible ? ToColor(0) : ToColor(0xffffff);
-  const auto pos = Vector2D<int>{8 + 8*text_window_index, 24 + 5};
-  FillRectangle(*text_window->Writer(), pos, {7, 15}, color);
-}
-
-/**
- * @fn
- * InputTextWindow関数
- * 
- * @brief 
- * 受け取った文字をテキストボックス末尾に追加
- * @param [in] c 描画する文字
- */
-void InputTextWindow(char c) {
-  if (c == 0) {
-    return;
-  }
-
-  // 現在位置を返すラムダ式
-  auto pos = []() { return Vector2D<int>{8 + 8*text_window_index, 24 + 6}; };
-
-  //! 最大文字数
-  const int max_chars = (text_window->Width() - 16) / 8 - 1;
-  // バックスペースキーがきたら文字を消してインデックスを下げる
-  if (c == '\b' && text_window_index > 0) {
-    // 一時的にカーソルは非表示
-    DrawTextCursor(false);
-    --text_window_index;
-    FillRectangle(*text_window->Writer(), pos(), {8, 16}, ToColor(0xffffff));
-    DrawTextCursor(true);
-  // 通常の文字が入力されたとき、文字を描画して、インデックスを上げる
-  } else if(c >= ' ' && text_window_index < max_chars) {
-    // 一時的にカーソルを非表示
-    DrawTextCursor(false);
-    WriteAscii(*text_window->Writer(), pos(), c, ToColor(0));
-    ++text_window_index;
-    DrawTextCursor(true);
-  }
-  // レイヤーの再描画
-  layer_manager->Draw(text_window_layer_id);
-}
 
 /**
  * @fn
@@ -198,6 +96,127 @@ int printk(const char* format, ...) {
 
 /**
  * @fn
+ * InitializeMainWindow関数
+ * 
+ * @brief
+ * メインウィンドウの初期化をおこなう
+ */
+void InitializeMainWindow() {
+  main_window = std::make_shared<ToplevelWindow>(
+      160, 52, screen_config.pixel_format, "Hello Window");
+
+  main_window_layer_id = layer_manager->NewLayer()
+    .SetWindow(main_window)
+    .SetDraggable(true)
+    .Move({300, 100})
+    .ID();
+
+  layer_manager->UpDown(main_window_layer_id, std::numeric_limits<int>::max());
+}
+
+/**
+ * @fn
+ * InitializeTextWindow関数
+ * 
+ * @brief 
+ * テキストボックスを初期化する。
+ */
+void InitializeTextWindow() {
+  //! ウィンドウの横幅
+  const int win_w = 160;
+  //! ウィンドウの高さ
+  const int win_h = 52;
+
+  text_window = std::make_shared<ToplevelWindow>(
+      win_w, win_h, screen_config.pixel_format, "Text Box Test");
+  DrawTextbox(*text_window->InnerWriter(), {0, 0}, text_window->InnerSize());
+
+  // レイヤーを生成
+  text_window_layer_id = layer_manager->NewLayer()
+    .SetWindow(text_window)
+    .SetDraggable(true)
+    .Move({350, 200})
+    .ID();
+
+  // レイヤーマネージャにレイヤーを追加して描画
+  layer_manager->UpDown(text_window_layer_id, std::numeric_limits<int>::max());
+}
+
+/**
+ * @fn
+ * DrawTextCursor関数
+ * 
+ * @brief 
+ * テキストボックス内のカーソルの表示・非表示を切り替える。
+ * 表示の場合は、黒。非表示の場合は白で塗りつぶし。
+ * @param [in] visible 表示=true, 非表示=false 
+ */
+void DrawTextCursor(bool visible) {
+  const auto color = visible ? ToColor(0) : ToColor(0xffffff);
+  const auto pos = Vector2D<int>{4 + 8*text_window_index, 5};
+  FillRectangle(*text_window->InnerWriter(), pos, {7, 15}, color);
+}
+
+/**
+ * @fn
+ * InputTextWindow関数
+ * 
+ * @brief 
+ * 受け取った文字をテキストボックス末尾に追加
+ * @param [in] c 描画する文字
+ */
+void InputTextWindow(char c) {
+  if (c == 0) {
+    return;
+  }
+
+  // 現在位置を返すラムダ式
+  auto pos = []() { return Vector2D<int>{4 + 8*text_window_index, 6}; };
+
+  //! 最大文字数
+  const int max_chars = (text_window->InnerSize().x - 8) / 8 - 1;
+
+  // バックスペースキーがきたら文字を消してインデックスを下げる
+  if (c == '\b' && text_window_index > 0) {
+    // 一時的にカーソルは非表示
+    DrawTextCursor(false);
+    --text_window_index;
+    FillRectangle(*text_window->InnerWriter(), pos(), {8, 16}, ToColor(0xffffff));
+    DrawTextCursor(true);
+  // 通常の文字が入力されたとき、文字を描画して、インデックスを上げる
+  } else if(c >= ' ' && text_window_index < max_chars) {
+    // 一時的にカーソルを非表示
+    DrawTextCursor(false);
+    WriteAscii(*text_window->InnerWriter(), pos(), c, ToColor(0));
+    ++text_window_index;
+    DrawTextCursor(true);
+  }
+  // レイヤーの再描画
+  layer_manager->Draw(text_window_layer_id);
+}
+
+/**
+ * @fn
+ * InitializeTaskBWindow関数
+ * 
+ * @brief 
+ * TaskB()を実行するウィンドウを初期化する
+ */
+void InitializeTaskBWindow() {
+  task_b_window = std::make_shared<ToplevelWindow>(
+      160, 52, screen_config.pixel_format, "TaskB Window");
+
+  task_b_window_layer_id = layer_manager->NewLayer()
+    .SetWindow(task_b_window)
+    .SetDraggable(true)
+    .Move({100, 100})
+    .ID();
+  
+  layer_manager->UpDown(task_b_window_layer_id, std::numeric_limits<int>::max());
+}
+
+/**
+ * @fn
  * TaskB関数
  * 
  * @brief 
@@ -220,9 +239,10 @@ void TaskB(uint64_t task_id, int64_t data) {
     ++count;
     sprintf(str, "%010d", count);
     // 一旦背景色で塗りつぶしてクリアする
-    FillRectangle(*task_b_window->Writer(), {24, 28}, {8 * 10, 16}, {0xc6, 0xc6, 0xc6});
+    FillRectangle(*task_b_window->InnerWriter(), {20, 4}, {8 * 10, 16}, {0xc6, 0xc6, 0xc6});
+
     // 文字列を描画
-    WriteString(*task_b_window->Writer(), {24, 28}, str, {0, 0, 0});
+    WriteString(*task_b_window->InnerWriter(), {20, 4}, str, {0, 0, 0});
 
     // メインタスクに描画イベントを送る
     Message msg{Message::kLayer, task_id};
@@ -248,27 +268,6 @@ void TaskB(uint64_t task_id, int64_t data) {
       }
     }
   }
-}
-
-/**
- * @fn
- * InitializeMainWindow関数
- * 
- * @brief
- * メインウィンドウの初期化をおこなう
- */
-void InitializeMainWindow() {
-  main_window = std::make_shared<Window>(
-      160, 52, screen_config.pixel_format);
-  DrawWindow(*main_window->Writer(), "Hello Window");
-
-  main_window_layer_id = layer_manager->NewLayer()
-    .SetWindow(main_window)
-    .SetDraggable(true)
-    .Move({300, 100})
-    .ID();
-
-  layer_manager->UpDown(main_window_layer_id, std::numeric_limits<int>::max());
 }
 
 /**
@@ -325,6 +324,7 @@ extern "C" void KernelMainNewStack(
 
   // 全体の描画
   layer_manager->Draw({{0, 0}, ScreenSize()});
+  active_layer->Activate(task_b_window_layer_id);
 
   // タイマー割り込み処理の初期化
   acpi::Initialize(acpi_table);
@@ -368,8 +368,8 @@ extern "C" void KernelMainNewStack(
 
     // メインウィンドウに表示するカウンタ変数を表示
     sprintf(str, "%010lu", tick);
-    FillRectangle(*main_window->Writer(), {24, 28}, {8 * 10, 16}, {0xc6, 0xc6, 0xc6});
-    WriteString(*main_window->Writer(), {24, 28}, str, {0, 0, 0});
+    FillRectangle(*main_window->InnerWriter(), {20, 4}, {8 * 10, 16}, {0xc6, 0xc6, 0xc6});
+    WriteString(*main_window->InnerWriter(), {20, 4}, str, {0, 0, 0});
     layer_manager->Draw(main_window_layer_id);
 
     // cliオペランドで割り込みを一時的に受け取らないようにする
@@ -409,15 +409,22 @@ extern "C" void KernelMainNewStack(
         break;
       // キーボード入力イベントの場合
       case Message::kKeyPush:
-        if (msg->arg.keyboard.ascii != 0) {
-          // テキストボックス内に描画
+        if (auto act = active_layer->GetActive(); act == text_window_layer_id) {
+          // アクティブウィンドウがテキストボックスであれば、その内に文字列を描画
           InputTextWindow(msg->arg.keyboard.ascii);
-          // sキーを入力したとき、TaskBをスリープさせる
+        } else if(act == task_b_window_layer_id) {
+          // アクティブウィンドウがTaskBウィンドウであれば、sキーを入力したとき、TaskBをスリープさせる
           if (msg->arg.keyboard.ascii == 's') {
             printk("Sleep TaskB: %s\n", task_manager->Sleep(taskb_id).Name());
           } else if(msg->arg.keyboard.ascii == 'w') {
+            // wキーを入力されたとき、TaskBを起床させる
             printk("Wakeup TaskB: %s\n", task_manager->Wakeup(taskb_id).Name());
           }
+        } else {
+          // その他の場合は、コンソールにキー入力を出力
+          printk("key push not handled: keycode %02x, ascii %02x\n",
+                 msg->arg.keyboard.keycode,
+                 msg->arg.keyboard.ascii);
         }
         break;
       // レイヤー操作イベントの場合

@@ -176,6 +176,58 @@ int Window::Height() const {
   return height_;
 }
 
+/**
+ * @fn
+ * ToplevelWindow::ToplevelWindowコンストラクタ
+ * 
+ * @brief Construct a new Toplevel Window:: Toplevel Window object
+ * @param [in] width 幅
+ * @param [in] height 高さ
+ * @param [in] shadow_format シャドーバッファにしようするPixelFormat
+ * @param [in] title ウィンドウのタイトル文字列
+ */
+ToplevelWindow::ToplevelWindow(int width, int height, PixelFormat shadow_format,
+                               const std::string& title) 
+    : Window{width, height, shadow_format}, title_{title} {
+  DrawWindow(*Writer(), title_.c_str());
+}
+
+/**
+ * @fn
+ * ToplevelWindow::Activateメソッド
+ * 
+ * @brief 
+ * このウィンドウを活性化する
+ */
+void ToplevelWindow::Activate() {
+  Window::Activate();
+  DrawWindowTitle(*Writer(), title_.c_str(), true);
+}
+
+/**
+ * @fn
+ * ToplevelWindow::Deactivateメソッド
+ * 
+ * @brief 
+ * このウィンドウを非活性化する
+ */
+void ToplevelWindow::Deactivate() {
+  Window::Deactivate();
+  DrawWindowTitle(*Writer(), title_.c_str(), false);
+}
+
+/**
+ * @fn
+ * ToplevelWindow::InnerSizeメソッド
+ * 
+ * @brief 
+ * タイトルバーとマージンを除いた内側領域の大きさを取得する
+ * @return Vector2D<int> サイズ
+ */
+Vector2D<int> ToplevelWindow::InnerSize() const {
+  return Size() - kTopleftMargin - kBottomRightMargin;
+}
+
 namespace {
   const int kCloseButtonWidth = 16;
   const int kCloseButtonHeight = 14;
@@ -195,6 +247,41 @@ namespace {
     ".$$$$$$$$$$$$$$@",
     ".@@@@@@@@@@@@@@@",
   };
+}
+
+/**
+ * @fn
+ * DrawWindowTitle関数
+ * 
+ * @brief 
+ * タイトルバーを描画する
+ * @param [in] writer PixelWriter
+ * @param [in] title タイトルバーに描画する文字列
+ * @param [in] activate bool 活性化／非活性化する
+ */
+void DrawWindowTitle(PixelWriter& writer, const char* title, bool activate){
+  const auto win_w = writer.Width();
+  uint32_t bgcolor = 0x848484;
+  if (activate) {
+    bgcolor = 0x000084;
+  }
+
+  FillRectangle(writer, {3, 3}, {win_w - 6, 18}, ToColor(bgcolor));
+  WriteString(writer, {24, 4}, title, ToColor(0xffffff));
+
+  for (int y = 0; y < kCloseButtonHeight; ++y) {
+    for (int x = 0; x <kCloseButtonWidth; ++x) {
+      PixelColor c = ToColor(0xffffff);
+      if (close_button[y][x] == '@') {
+        c = ToColor(0x000000);
+      } else if (close_button[y][x] == '$') {
+        c = ToColor(0x848484);
+      } else if (close_button[y][x] == ':') {
+        c = ToColor(0xc6c6c6);
+      }
+      writer.Write({win_w - 5 - kCloseButtonWidth + x, 5+ y}, c);
+    }
+  }
 }
 
 

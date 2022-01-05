@@ -107,6 +107,11 @@ void Mouse::OnInterrupt(uint8_t buttons, int8_t displacement_x, int8_t displacem
     if (layer && layer->IsDraggable()) {
       // レイヤーが移動可能だったらdrag_layer_idをセット
       drag_layer_id_ = layer->ID();
+      // 対象のレイヤーを活性化する
+      active_layer->Activate(layer->ID());
+    } else {
+      // どのレイヤーも選択しないとき、一旦すべてのレイヤーを非活性化
+      active_layer->Activate(0);
     }
   } else if (previous_left_pressed && left_pressed) {
     // 既に左クリックしてあって、まだ押し続けている場合は、対象のレイヤーを移動
@@ -153,4 +158,7 @@ void InitializeMouse() {
     [mouse](uint8_t buttons, int8_t displacement_x, int8_t displacement_y) {
       mouse->OnInterrupt(buttons, displacement_x, displacement_y);
     };
+  
+  // ウィンドウのアクティブ状態を管理するため、マウスレイヤーをactive_layerにいれておく
+  active_layer->SetMouseLayer(mouse_layer_id);
 }

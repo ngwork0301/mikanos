@@ -369,11 +369,84 @@ void LayerManager::SetWriter(FrameBuffer* screen) {
   return *it;
  }
 
+/**
+ * @fn
+ * LayerManager::GetHeightメソッド
+ * 
+ * @brief 
+ * 指定されたレイヤーの現在のスタック上の高さを返す
+ * @param id 高さを取得したいレイヤーのID
+ * @return int 高さ。見つからない場合は-1を返す
+ */
+int LayerManager::GetHeight(unsigned int id){
+  // 指定したIDのレイヤーを探査
+  for (int h = 0; h < layer_stack_.size(); ++h) {
+    if (layer_stack_[h]->ID() == id) {
+      return h;
+    }
+  }
+  // 指定したレイヤーが見つからない場合
+  return -1;
+}
+ 
+
+/**
+ * @fn ActiveLayer::ActiveLayerコンストラクタ
+ * @brief Construct a new Active Layer:: Active Layer object
+ * @param manager 
+ */
+ActiveLayer::ActiveLayer(LayerManager& manager) : manager_{manager} {
+}
+
+/**
+ * @fn
+ * ActiveLayer::SetMouseLayerメソッド
+ * 
+ * @brief 
+ * マウスレイヤーを入れるsetter
+ * @param mouse_layer マウスレイヤーのレイヤーID
+ */
+void ActiveLayer::SetMouseLayer(unsigned int mouse_layer) {
+  mouse_layer_ = mouse_layer;
+}
+
+/**
+ * @fn
+ * ActiveLayer::Activateメソッド
+ * 
+ * @brief 
+ * 指定したレイヤーIDのレイヤーを活性化する
+ * @param layer_id 活性化するレイヤーID
+ */
+void ActiveLayer::Activate(unsigned int layer_id) {
+  // すでに活性化済みの場合
+  if (active_layer_ == layer_id) {
+    return;
+  }
+  // active_layer_ がすでに設定されていた場合、そのレイヤは非活性にする。
+  if (active_layer_ > 0) {
+    Layer* layer = manager_.FindLayer(active_layer_);
+    layer->GetWindow()->Deactivate();
+    manager_.Draw(active_layer_);
+  }
+
+  active_layer_ = layer_id;
+  if (active_layer_ > 0) {
+    // 0より大きいときは指定したレイヤーを活性化する
+    Layer* layer = manager_.FindLayer(active_layer_);
+    layer->GetWindow()->Activate();
+    // マウスレイヤ(常に最前面)よりひとつ手前まで持ってくる
+    manager_.UpDown(active_layer_, manager_.GetHeight(mouse_layer_) - 1);
+    manager_.Draw(active_layer_);
+  }
+}
+
  namespace {
   FrameBuffer* screen;
 }
 
 LayerManager* layer_manager;
+ActiveLayer* active_layer;
 
 /**
  * @fn
@@ -422,7 +495,7 @@ void InitializeLayer() {
   layer_manager->UpDown(bglayer_id, 0);
   layer_manager->UpDown(console->LayerID(), 1);
 
-  // Log(kError, "initialize layer completed\n");
+  active_layer = new ActiveLayer{*layer_manager};
 }
 
 /**
