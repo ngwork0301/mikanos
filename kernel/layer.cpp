@@ -1,5 +1,6 @@
 #include "layer.hpp"
 #include <algorithm>
+#include <limits>
 #include "console.hpp"
 #include "logger.hpp"
 
@@ -435,8 +436,13 @@ void ActiveLayer::Activate(unsigned int layer_id) {
     // 0より大きいときは指定したレイヤーを活性化する
     Layer* layer = manager_.FindLayer(active_layer_);
     layer->GetWindow()->Activate();
-    // マウスレイヤ(常に最前面)よりひとつ手前まで持ってくる
-    manager_.UpDown(active_layer_, manager_.GetHeight(mouse_layer_) - 1);
+    if (mouse_layer_ > 0) {
+      // マウスレイヤ(常に最前面)よりひとつ手前まで持ってくる
+      manager_.UpDown(active_layer_, manager_.GetHeight(mouse_layer_) - 1);
+    } else {
+      // マウスレイヤーが初期値のまま(=0)のときは、最前面へ移動
+      manager_.UpDown(active_layer_, std::numeric_limits<int>::max());
+    }
     manager_.Draw(active_layer_);
   }
 }

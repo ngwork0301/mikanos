@@ -324,6 +324,8 @@ extern "C" void KernelMainNewStack(
 
   // 全体の描画
   layer_manager->Draw({{0, 0}, ScreenSize()});
+  active_layer->Activate(main_window_layer_id);
+  active_layer->Activate(text_window_layer_id);
   active_layer->Activate(task_b_window_layer_id);
 
   // タイマー割り込み処理の初期化
