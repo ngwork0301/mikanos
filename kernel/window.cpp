@@ -225,7 +225,7 @@ void ToplevelWindow::Deactivate() {
  * @return Vector2D<int> サイズ
  */
 Vector2D<int> ToplevelWindow::InnerSize() const {
-  return Size() - kTopleftMargin - kBottomRightMargin;
+  return Size() - kTopLeftMargin - kBottomRightMargin;
 }
 
 namespace {
@@ -330,6 +330,42 @@ void DrawWindow(PixelWriter& writer, const char* title) {
   }
 }
 
+namespace {
+
+  /**
+   * @fn
+   * DrawTextbox関数
+   * 
+   * @brief 
+   * テキストボックスを描画する。
+   * 
+   * @param [in] writer PixelWriterインスタンス
+   * @param [in] pos 描画位置
+   * @param [in] size 描画サイズ
+   * @param [in] backgroud 背景色
+   * @param [in] border_light 枠の色
+   * @param [in] border_dark 枠の影の色
+   */
+  void DrawTextbox(PixelWriter& writer,  Vector2D<int> pos, Vector2D<int> size,
+                  const PixelColor& backgroud,
+                  const PixelColor& border_light,
+                  const PixelColor& border_dark) {
+    auto fill_rect = 
+      [&writer](Vector2D<int> pos, Vector2D<int> size, const PixelColor& c) {
+        FillRectangle(writer, pos, size, c);
+      };
+    
+    // fill main box
+    fill_rect(pos + Vector2D<int>{1, 1}, size - Vector2D<int>{2, 2}, backgroud);
+
+    // draw border lines
+    fill_rect(pos,                            {size.x, 1}, border_light);
+    fill_rect(pos,                            {1, size.y}, border_light);
+    fill_rect(pos + Vector2D<int>{0, size.y}, {size.x, 1}, border_dark);
+    fill_rect(pos + Vector2D<int>{size.x, 0}, {1, size.y}, border_dark);
+  }
+}
+
 /**
  * @fn
  * DrawTextbox関数
@@ -341,18 +377,23 @@ void DrawWindow(PixelWriter& writer, const char* title) {
  * @param [in] pos 描画位置
  * @param [in] size 描画サイズ
  */
-void DrawTextbox(PixelWriter& writer,  Vector2D<int> pos, Vector2D<int> size) {
-  auto fill_rect = 
-    [&writer](Vector2D<int> pos, Vector2D<int> size, uint32_t c) {
-      FillRectangle(writer, pos, size, ToColor(c));
-    };
-  
-  // fill main box
-  fill_rect(pos + Vector2D<int>{1, 1}, size - Vector2D<int>{2, 2}, 0xffffff);
+void DrawTextbox(PixelWriter& writer,  Vector2D<int> pos, Vector2D<int> size){
+  DrawTextbox(writer, pos, size,
+              ToColor(0xffffff), ToColor(0xc6c6c6), ToColor(0x848484));
+}
 
-  // draw border lines
-  fill_rect(pos,                            {size.x, 1}, 0x848484);
-  fill_rect(pos,                            {1, size.y}, 0x848484);
-  fill_rect(pos + Vector2D<int>{0, size.y}, {size.x, 1}, 0xc6c6c6);
-  fill_rect(pos + Vector2D<int>{size.x, 0}, {1, size.y}, 0xc6c6c6);
+
+/**
+ * @fn
+ * DrawTerminal関数
+ * 
+ * @brief 
+ * ターミナルウィンドウを描画する
+ * @param [in] writer PixelWriterインスタンス
+ * @param [in] pos 描画位置
+ * @param [in] size ウィンドウサイズ
+ */
+void DrawTerminal(PixelWriter& writer,  Vector2D<int> pos, Vector2D<int> size){
+  DrawTextbox(writer, pos, size,
+              ToColor(0x000000), ToColor(0xc6c6c6), ToColor(0x848484));
 }

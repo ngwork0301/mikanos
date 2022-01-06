@@ -31,6 +31,7 @@
 #include "pci.hpp"
 #include "segment.hpp"
 #include "task.hpp"
+#include "terminal.hpp"
 #include "timer.hpp"
 #include "usb/memory.hpp"
 #include "usb/device.hpp"
@@ -135,7 +136,7 @@ void InitializeTextWindow() {
   text_window_layer_id = layer_manager->NewLayer()
     .SetWindow(text_window)
     .SetDraggable(true)
-    .Move({350, 200})
+    .Move({500, 100})
     .ID();
 
   // レイヤーマネージャにレイヤーを追加して描画
@@ -349,6 +350,11 @@ extern "C" void KernelMainNewStack(
     .InitContext(TaskB, 45)
     .Wakeup()
     .ID();
+  // ターミナル用タスクを生成して起床させる
+  const uint64_t task_terminal_id = task_manager->NewTask()
+    .InitContext(TaskTerminal, 0)
+    .Wakeup()
+    .ID();
 
   // 以降の割り込みがあるものの初期化は、タスク機能の初期化がおわってから
   // xHCIマウスデバイスを探し出して初期化
@@ -407,6 +413,11 @@ extern "C" void KernelMainNewStack(
           textbox_cursor_visible = !textbox_cursor_visible;
           DrawTextCursor(textbox_cursor_visible);
           layer_manager->Draw(text_window_layer_id);
+
+          // ターミナルタスクのカーソル点滅処理を呼び出し
+          __asm__("cli"); // 割り込み禁止
+          task_manager->SendMessage(task_terminal_id, *msg);
+          __asm__("sti"); // 割り込み禁止
         }
         break;
       // キーボード入力イベントの場合
