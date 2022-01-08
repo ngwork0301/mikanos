@@ -33,11 +33,17 @@ Terminal::Terminal() {
  * 
  * @brief 
  * カーソルを点滅させる
+ * @return
+ * カーソルの描画範囲
  */
-void Terminal::BlinkCursor() {
+Rectangle<int> Terminal::BlinkCursor() {
   // カーソル表示フラグを反転
   cursor_visible_ = !cursor_visible_;
   DrawCursor(cursor_visible_);
+
+  return {ToplevelWindow::kTopLeftMargin +
+            Vector2D<int>{4 + 8*cursor_.x, 5 + 16*cursor_.y},
+            {7, 15}};
 }
 
 /**
@@ -86,13 +92,15 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
     switch (msg->type) {
       case Message::kTimerTimeout:
         // カーソル点滅のためのタイマーイベントが送られてきたとき
-        terminal->BlinkCursor();
-
         {
+          const auto area = terminal->BlinkCursor();
+
           // メインタスク(ID=1)に画面描画処理を呼び出し
-          Message msg{Message::kLayer, task_id};
-          msg.arg.layer.layer_id = terminal->LayerID();
-          msg.arg.layer.op = LayerOperation::Draw;
+          Message msg = MakeLayerMessage(
+              task_id, terminal->LayerID(), LayerOperation::DrawArea, area);
+          // Message msg{Message::kLayer, task_id};
+          // msg.arg.layer.layer_id = terminal->LayerID();
+          // msg.arg.layer.op = LayerOperation::Draw;
           __asm__("cli"); // 割り込みを抑止
           task_manager->SendMessage(1, msg);
           __asm__("sti"); // 割り込みを許可

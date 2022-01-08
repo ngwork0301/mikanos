@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <limits>
 #include "console.hpp"
+#include "timer.hpp"
 #include "logger.hpp"
 
 /**
@@ -245,12 +246,34 @@ void LayerManager::Draw(const Rectangle<int>& area) const {
  * @param [in] id 再描画するレイヤーのID
  */
 void LayerManager::Draw(unsigned int id) const {
+  // 位置{0, 0}、範囲{-1, -1}にしたRectangleを生成して、オーバーロードしているLayerManager::Drawを呼び出し
+  Draw(id, {{0, 0}, {-1, -1}});
+}
+
+/**
+ * @fn
+ * LayerManager::Drawメソッド
+ * @brief 
+ * 現在表示状態にあるレイヤーのうち、引数で指定したIDのレイヤーの特定範囲を再描画する
+ * @param id 再描画するレイヤーのID
+ * @param area 再描画範囲
+ */
+void LayerManager::Draw(unsigned int id, Rectangle<int> area) const{
+  //! 再描画する範囲があるかどうか
   bool draw = false;
+  //! 指定したIDのレイヤーのウィンドウ範囲
   Rectangle<int> window_area;
   for (auto layer : layer_stack_) {
     if (layer->ID() == id) {
       window_area.size = layer->GetWindow()->Size();
       window_area.pos = layer->GetPosition();
+      if (area.size.x >= 0 || area.size.y >= 0) {
+        // area.posを相対位置から、絶対位置に変更
+        area.pos = area.pos + window_area.pos;
+        // window_areaを指定したIDのレイヤー全体と、areaで指定した範囲の重なった部分に限定して置換
+        window_area = window_area & area;
+      }
+      // 対象のレイヤーがあったので、描画フラグをtrue
       draw = true;
     }
     if (draw) {
@@ -261,6 +284,7 @@ void LayerManager::Draw(unsigned int id) const {
   // バックバッファを一気にフレームバッファに反映
   screen_->Copy(window_area.pos, back_buffer_, window_area);
 }
+
 
 /**
  * @fn
@@ -522,7 +546,28 @@ void ProcessLayerMessage(const Message& msg){
       layer_manager->MoveRelative(arg.layer_id, {arg.x, arg.y});
       break;
     case LayerOperation::Draw:
+      // ターミナルウィンドウのレイヤーIDは7
+      if (arg.layer_id == 7) {
+        // 描画性能を測る
+        auto start = LAPICTimerElapsed();
+        layer_manager->Draw(arg.layer_id);
+        auto elapsed = LAPICTimerElapsed() - start;
+        Log(kWarn, "draw layer 7: elapsed = %u\n", elapsed);
+        break;
+      }
       layer_manager->Draw(arg.layer_id);
+      break;
+    case LayerOperation::DrawArea:
+      // ターミナルウィンドウのレイヤーIDは7
+      if (arg.layer_id == 7) {
+        // 描画性能を測る
+        auto start = LAPICTimerElapsed();
+        layer_manager->Draw(arg.layer_id, {{arg.x, arg.y}, {arg.w, arg.h}});
+        auto elapsed = LAPICTimerElapsed() - start;
+        Log(kWarn, "draw layer 7: elapsed = %u\n", elapsed);
+        break;
+      }
+      layer_manager->Draw(arg.layer_id, {{arg.x, arg.y}, {arg.w, arg.h}});
       break;
   }
 }

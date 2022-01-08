@@ -17,7 +17,7 @@ class Terminal {
 
     Terminal();
     unsigned int LayerID() const { return layer_id_; }
-    void BlinkCursor();
+    Rectangle<int> BlinkCursor();
 
   private:
     //! このターミナルウィンドウのインスタンス

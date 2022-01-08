@@ -65,6 +65,7 @@ class LayerManager {
 
     void Draw(const Rectangle<int>& area) const;
     void Draw(unsigned int id) const;
+    void Draw(unsigned int id, Rectangle<int> area) const;
 
     void Move(unsigned int id, Vector2D<int> new_position);
     void MoveRelative(unsigned int id, Vector2D<int> pos_diff);
@@ -110,6 +111,31 @@ class ActiveLayer {
     unsigned int active_layer_{0};
     unsigned int mouse_layer_{0};
 };
+
+/**
+ * @fn
+ * MakeLayerMessage関数
+ * 
+ * @brief 
+ * メインタスクに送るLayerMessageインスタンスを生成する。
+ * @param task_id 送信元タスクID
+ * @param layer_id 描画対象のレイヤーID
+ * @param op LayerOperationインスタンス
+ * @param area ウィンドウ内の描画範囲
+ * @return constexpr Message 
+ */
+constexpr Message MakeLayerMessage(
+    uint64_t task_id, unsigned int layer_id,
+    LayerOperation op, const Rectangle<int>& area) {
+  Message msg{Message::kLayer, task_id};
+  msg.arg.layer.layer_id = layer_id;
+  msg.arg.layer.op = op;
+  msg.arg.layer.x = area.pos.x;
+  msg.arg.layer.y = area.pos.y;
+  msg.arg.layer.w = area.size.x;
+  msg.arg.layer.h = area.size.y;
+  return msg;
+}
 
 extern ActiveLayer* active_layer;
 
