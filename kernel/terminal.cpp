@@ -40,11 +40,75 @@ Rectangle<int> Terminal::BlinkCursor() {
   // カーソル表示フラグを反転
   cursor_visible_ = !cursor_visible_;
   DrawCursor(cursor_visible_);
-
-  return {ToplevelWindow::kTopLeftMargin +
-            Vector2D<int>{4 + 8*cursor_.x, 5 + 16*cursor_.y},
-            {7, 15}};
+  return {CalcCursorPos(), {7, 15}};
 }
+
+/**
+ * @fn
+ * Terminal::InputKeyメソッド
+ * @brief 
+ * キー入力を受け付ける
+ * @param [in] modifier モディファイア
+ * @param [in] keycode キーコード
+ * @param [in] ascii ASCII文字列
+ * @return Rectangle<int> 
+ */
+Rectangle<int> Terminal::InputKey(uint8_t modifier, uint8_t keycode, char ascii){
+  // 入力した文字列がみえないため、一時的にカーソルは非表示にする
+  DrawCursor(false);
+
+  Rectangle<int> draw_area{CalcCursorPos(), {8*2, 16}};
+
+  // 改行コードの場合は、コマンド実行して次の行へ移動
+  if (ascii == '\n') {
+    // 新規行へ移行するためカーソル行を初期化
+    linebuf_[linebuf_index_] = 0;
+    linebuf_index_ = 0;
+    cursor_.x = 0;
+
+    // 現状コマンド実行は、入力したコマンドはコンソールに表示するだけ
+    Log(kWarn, "line: %s\n", &linebuf_[0]);
+    if (cursor_.y < kRows - 1) {
+      // 表示する行が最大の場合は、1行表示をへらすだけ
+      ++cursor_.y;
+    } else {
+      // そうでない場合は、1行下へスクロール
+      Scroll1();
+    }
+    draw_area.pos = ToplevelWindow::kTopLeftMargin;
+    draw_area.size = window_->InnerSize();
+  } else if (ascii == '\b') {
+    // バックスペースキーが入力したときは1文字消して戻る
+    if (cursor_.x > 0) {
+      // カーソルの位置をずらす
+      --cursor_.x;
+      // 1文字分黒で塗りつぶして消す
+      FillRectangle(*window_->Writer(), CalcCursorPos(), {8, 16}, {0, 0, 0});
+      draw_area.pos = CalcCursorPos();
+
+      if (linebuf_index_ > 0) {
+        // linebuf_1文字分消す
+        --linebuf_index_;
+      }
+    }
+  } else if (ascii != 0) {
+    // その他の文字列がきたらその文字を描画する
+    // カーソル位置が1行の最大文字以内の場合のみ文字を入力。それ以外は無視
+    if (cursor_.x < kColumns - 1 && linebuf_index_ < kLineMax - 1) {
+      linebuf_[linebuf_index_] = ascii;
+      ++linebuf_index_;
+      WriteAscii(*window_->Writer(), CalcCursorPos(), ascii, {255, 255, 255});
+      ++cursor_.x;
+    }
+  }
+
+  // カーソルを描画する
+  DrawCursor(true);
+
+  // 描画領域を返す
+  return draw_area;
+}
+
 
 /**
  * @fn
@@ -58,9 +122,40 @@ Rectangle<int> Terminal::BlinkCursor() {
 void Terminal::DrawCursor(bool visible) {
   // 表示するときは白。非表示のときは背景色と同色の黒
   const auto color = visible ? ToColor(0xffffff) : ToColor(0);
-  // カーソル描画位置 現在行、列からピクセル数を算出
-  const auto pos = Vector2D<int>{4 + 8*cursor_.x, 5 + 16*cursor_.y};
-  FillRectangle(*window_->InnerWriter(), pos, {7, 15}, color);
+  FillRectangle(*window_->Writer(), CalcCursorPos(), {7, 15}, color);
+}
+
+/**
+ * @fn
+ * Terminal::CalcCursorPosメソッド
+ * 
+ * @brief 
+ * カーソルのピクセル座標を計算する
+ * @return Vector2D<int> カーソル位置のピクセル座標
+ */
+Vector2D<int> Terminal::CalcCursorPos() const{
+  return ToplevelWindow::kTopLeftMargin +
+      Vector2D<int>{4 + 8 * cursor_.x, 4 + 16 * cursor_.y};
+}
+
+/**
+ * @fn
+ * Terminal::Scroll1メソッド
+ * 
+ * @brief 
+ * 1行スクロールする
+ */
+void Terminal::Scroll1() {
+  // 移動元の範囲の座標を計算
+  Rectangle<int> move_src{
+    ToplevelWindow::kTopLeftMargin + Vector2D<int>{4, 4 + 16},
+    {8*kColumns, 16*(kRows - 1)}
+  };
+  // 上記の範囲を1行分移動
+  window_->Move(ToplevelWindow::kTopLeftMargin + Vector2D<int>{4, 4}, move_src);
+  // 最終行を黒で塗りつぶし
+  FillRectangle(*window_->InnerWriter(),
+                {4, 4 + 16*cursor_.y}, {8*kColumns, 16}, {0, 0, 0});
 }
 
 /**
@@ -78,6 +173,8 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
   Terminal* terminal = new Terminal;
   layer_manager->Move(terminal->LayerID(), {100, 200});
   active_layer->Activate(terminal->LayerID());
+  // ターミナルタスクを検索表に登録する
+  layer_task_map->insert(std::make_pair(terminal->LayerID(), task_id));
   __asm__("sti"); // 割り込みを許可
 
   while (true) {
@@ -104,6 +201,19 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
           __asm__("cli"); // 割り込みを抑止
           task_manager->SendMessage(1, msg);
           __asm__("sti"); // 割り込みを許可
+        }
+        break;
+      case Message::kKeyPush:
+        // キー入力イベントが送られてきたとき
+        {
+          const auto area = terminal->InputKey(msg->arg.keyboard.modifier,
+                                               msg->arg.keyboard.keycode,
+                                               msg->arg.keyboard.ascii);
+          Message msg = MakeLayerMessage(
+              task_id, terminal->LayerID(), LayerOperation::DrawArea, area);
+          __asm__("cli"); //割り込み禁止
+          task_manager->SendMessage(1, msg);
+          __asm__("sti"); //割り込み許可
         }
         break;
       default:

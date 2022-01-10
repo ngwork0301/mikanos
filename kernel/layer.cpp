@@ -192,7 +192,6 @@ void LayerManager::Move(unsigned int id, Vector2D<int> new_pos) {
   const auto old_pos = layer->GetPosition();
   layer->Move(new_pos);
   // 移動元の再描画
-  // Log(kWarn, "WANA: old_pos = {%d, %d}, window_size = {%d, %d}\n", old_pos.x, old_pos.y, window_size.x, window_size.y);
   Draw({old_pos, window_size});
   // 移動先の再描画
   Draw(id);
@@ -477,6 +476,8 @@ void ActiveLayer::Activate(unsigned int layer_id) {
 
 LayerManager* layer_manager;
 ActiveLayer* active_layer;
+//! レイヤーとタスクのマッピング定義
+std::map<unsigned int, uint64_t>* layer_task_map;
 
 /**
  * @fn
@@ -546,27 +547,9 @@ void ProcessLayerMessage(const Message& msg){
       layer_manager->MoveRelative(arg.layer_id, {arg.x, arg.y});
       break;
     case LayerOperation::Draw:
-      // ターミナルウィンドウのレイヤーIDは7
-      if (arg.layer_id == 7) {
-        // 描画性能を測る
-        auto start = LAPICTimerElapsed();
-        layer_manager->Draw(arg.layer_id);
-        auto elapsed = LAPICTimerElapsed() - start;
-        Log(kWarn, "draw layer 7: elapsed = %u\n", elapsed);
-        break;
-      }
       layer_manager->Draw(arg.layer_id);
       break;
     case LayerOperation::DrawArea:
-      // ターミナルウィンドウのレイヤーIDは7
-      if (arg.layer_id == 7) {
-        // 描画性能を測る
-        auto start = LAPICTimerElapsed();
-        layer_manager->Draw(arg.layer_id, {{arg.x, arg.y}, {arg.w, arg.h}});
-        auto elapsed = LAPICTimerElapsed() - start;
-        Log(kWarn, "draw layer 7: elapsed = %u\n", elapsed);
-        break;
-      }
       layer_manager->Draw(arg.layer_id, {{arg.x, arg.y}, {arg.w, arg.h}});
       break;
   }

@@ -81,6 +81,7 @@ class Window {
 class ToplevelWindow : public Window {
   public:
     //! {上, 左} の余白幅の定義
+    // static constexpr Vector2D<int> kTopLeftMargin{4, 24};
     static constexpr Vector2D<int> kTopLeftMargin{4, 24};
     //! {下, 右} の余白幅の定義
     static constexpr Vector2D<int> kBottomRightMargin{4, 4};

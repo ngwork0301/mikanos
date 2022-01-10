@@ -434,10 +434,19 @@ extern "C" void KernelMainNewStack(
             printk("Wakeup TaskB: %s\n", task_manager->Wakeup(taskb_id).Name());
           }
         } else {
-          // その他の場合は、コンソールにキー入力を出力
-          printk("key push not handled: keycode %02x, ascii %02x\n",
+          // その他のウィンドウがアクティブの場合は、そのレイヤーにkKeyPushイベントを送る
+          __asm__("cli"); //割り込み禁止
+          auto task_it = layer_task_map->find(act);
+          __asm__("sti"); //割り込み許可
+          if (task_it != layer_task_map->end()) {
+            __asm__("cli"); //割り込み禁止
+            task_manager->SendMessage(task_it->second, *msg);
+            __asm__("sti"); //割り込み許可
+          } else {
+            printk("key push not handled: keycode %02x, ascii %02x\n",
                  msg->arg.keyboard.keycode,
                  msg->arg.keyboard.ascii);
+          }
         }
         break;
       // レイヤー操作イベントの場合
