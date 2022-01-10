@@ -39,6 +39,8 @@ class Terminal {
     //! キー入力を1行分ためておくバッファ
     std::array<char, kLineMax> linebuf_{};
     void Scroll1();
+    void Print(const char* s);
+    void ExecuteLine();
 };
 
 void TaskTerminal(uint64_t task_id, int64_t data);

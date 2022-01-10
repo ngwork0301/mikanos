@@ -25,6 +25,9 @@ Terminal::Terminal() {
     .SetWindow(window_)
     .SetDraggable(true)
     .ID();
+  
+  // プロンプトを出力
+  Print(">");
 }
 
 /**
@@ -66,8 +69,6 @@ Rectangle<int> Terminal::InputKey(uint8_t modifier, uint8_t keycode, char ascii)
     linebuf_index_ = 0;
     cursor_.x = 0;
 
-    // 現状コマンド実行は、入力したコマンドはコンソールに表示するだけ
-    Log(kWarn, "line: %s\n", &linebuf_[0]);
     if (cursor_.y < kRows - 1) {
       // 表示する行が最大の場合は、1行表示をへらすだけ
       ++cursor_.y;
@@ -75,6 +76,9 @@ Rectangle<int> Terminal::InputKey(uint8_t modifier, uint8_t keycode, char ascii)
       // そうでない場合は、1行下へスクロール
       Scroll1();
     }
+    // コマンドを実行
+    ExecuteLine();
+    Print(">");
     draw_area.pos = ToplevelWindow::kTopLeftMargin;
     draw_area.size = window_->InnerSize();
   } else if (ascii == '\b') {
@@ -156,6 +160,78 @@ void Terminal::Scroll1() {
   // 最終行を黒で塗りつぶし
   FillRectangle(*window_->InnerWriter(),
                 {4, 4 + 16*cursor_.y}, {8*kColumns, 16}, {0, 0, 0});
+}
+
+/**
+ * @fn
+ * Terminal::Printメソッド
+ * 
+ * @brief 
+ * 指定された文字列をターミナルへ表示する
+ * @param s 表示する文字列
+ */
+void Terminal::Print(const char* s) {
+  // 一時的にカーソルは非表示
+  DrawCursor(false);
+  
+  // 1行改行する
+  auto newline = [this]() {
+    cursor_.x = 0;
+    if (cursor_.y < kRows - 1) {
+      // カーソルが表示できる行数以下の場合は、単純にカーソルを1行下に移動
+      ++cursor_.y;
+    } else {
+      // カーソルが表示できる行数以上の場合は、Ⅰ行分スクロール
+      Scroll1();
+    }
+  };
+
+  while(*s) {
+    if (*s == '\n') {
+      // 改行コードは、1行改行する
+      newline();
+    } else {
+      WriteAscii(*window_->Writer(), CalcCursorPos(), *s, {255, 255, 255});
+      if (cursor_.x == kColumns - 1) {
+        // 出力する文字数が1行の最大文字数以上になったっら1行改行して出力
+        newline();
+      } else {
+        ++cursor_.x;
+      }
+    }
+
+    ++s;
+  }
+
+  // 非表示にしたカーソルを再度表示
+  DrawCursor(true);
+}
+
+/**
+ * @fn
+ * Terminal::ExecuteLineメソッド
+ * 
+ * @brief 
+ * 入力された文字列をコマンドとして実行する
+ */
+void Terminal::ExecuteLine() {
+  char* command = &linebuf_[0];
+  char* first_arg = strchr(&linebuf_[0], ' ');
+  if (first_arg) {
+    // 第一引数があれば、コマンドと引数の間はNULL文字をいれて、アドレスを１つインクリメント
+    *first_arg = 0;
+    ++first_arg;
+  }
+  if (strcmp(command, "echo") == 0) {
+    if (first_arg) {
+      Print(first_arg);
+    }
+    Print("\n");
+  } else if (command[0] != 0) {
+    Print("no such command: ");
+    Print(command);
+    Print("\n");
+  }
 }
 
 /**
