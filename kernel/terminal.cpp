@@ -227,6 +227,12 @@ void Terminal::ExecuteLine() {
       Print(first_arg);
     }
     Print("\n");
+  } else if (strcmp(command, "clear") == 0) {
+    // ターミナル画面内をすべて黒で塗りつぶす
+    FillRectangle(*window_->InnerWriter(),
+                  {4, 4}, {8*kColumns, 16*kRows}, {0, 0, 0});
+    // カーソル位置を最初に戻す
+    cursor_.y = 0;
   } else if (command[0] != 0) {
     Print("no such command: ");
     Print(command);
