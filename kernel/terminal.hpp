@@ -41,6 +41,12 @@ class Terminal {
     void Scroll1();
     void Print(const char* s);
     void ExecuteLine();
+
+    //! コマンドヒストリ
+    std::deque<std::array<char, kLineMax>> cmd_history_{};
+    //! 現在表示中のヒストリのインデックス(小さいほど新しい)
+    int cmd_history_index_{-1};
+    Rectangle<int> HistoryUpDown(int direction);
 };
 
 void TaskTerminal(uint64_t task_id, int64_t data);

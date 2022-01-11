@@ -2,8 +2,8 @@
 
 #include "font.hpp"
 #include "layer.hpp"
-
 #include "logger.hpp"
+#include "pci.hpp"
 
 /**
  * @fn Terminal::Terminalコンストラクタ
@@ -28,6 +28,9 @@ Terminal::Terminal() {
   
   // プロンプトを出力
   Print(">");
+
+  // コマンドヒストリの初期化
+  cmd_history_.resize(8);
 }
 
 /**
@@ -66,7 +69,14 @@ Rectangle<int> Terminal::InputKey(uint8_t modifier, uint8_t keycode, char ascii)
   if (ascii == '\n') {
     // 新規行へ移行するためカーソル行を初期化
     linebuf_[linebuf_index_] = 0;
+    if (linebuf_index_ > 0) {
+      // コマンドヒストリの末尾を削除
+      cmd_history_.pop_back();
+      // コマンドヒストリに追加
+      cmd_history_.push_front(linebuf_);
+    }
     linebuf_index_ = 0;
+    cmd_history_index_ = -1;
     cursor_.x = 0;
 
     if (cursor_.y < kRows - 1) {
@@ -95,6 +105,12 @@ Rectangle<int> Terminal::InputKey(uint8_t modifier, uint8_t keycode, char ascii)
         --linebuf_index_;
       }
     }
+  } else if (keycode == 0x51) { // down arrow
+    // 下キーが押されたら、コマンドヒストリを一つ先へ移動
+    draw_area = HistoryUpDown(-1);
+  } else if (keycode == 0x52) { // up arrow
+    // 上キーが押されたら、コマンドヒストリを一つ前へ移動
+    draw_area = HistoryUpDown(1);
   } else if (ascii != 0) {
     // その他の文字列がきたらその文字を描画する
     // カーソル位置が1行の最大文字以内の場合のみ文字を入力。それ以外は無視
@@ -233,11 +249,63 @@ void Terminal::ExecuteLine() {
                   {4, 4}, {8*kColumns, 16*kRows}, {0, 0, 0});
     // カーソル位置を最初に戻す
     cursor_.y = 0;
+  } else if (strcmp(command, "lspci") == 0) {
+    char s[64];
+    for (int i = 0; i < pci::num_device; ++i) {
+      const auto& dev = pci::devices[i];
+      auto vender_id = pci::ReadVendorId(dev.bus, dev.device, dev.function);
+      sprintf(s, "%02x:%02x.%d vend=%04x head=%02x class=%02x.%02x.%02x\n",
+          dev.bus, dev.device, dev.function, vender_id, dev.header_type,
+          dev.class_code.base, dev.class_code.sub, dev.class_code.interface);
+      Print(s);
+    }
   } else if (command[0] != 0) {
     Print("no such command: ");
     Print(command);
     Print("\n");
   }
+}
+
+/**
+ * @fn
+ * Terminal::HistoryUpDownメソッド
+ * 
+ * @brief 
+ * コマンドヒストリを上下にたどり、再描画が必要な範囲を返却する
+ * @param [in] direction たどる履歴の方向。1はひとつ過去。-1はひとつ未来
+ * @return Rectangle<int> ターミナル画面内の再描画が必要な範囲
+ */
+Rectangle<int> Terminal::HistoryUpDown(int direction) {
+  if (direction == -1 && cmd_history_index_ >= 0) {
+    --cmd_history_index_;
+  } else if(direction == 1 && cmd_history_index_ + 1 < cmd_history_.size()) {
+    ++cmd_history_index_;
+  }
+
+  // カーソル位置は、一番左にする
+  cursor_.x = 1;
+  const auto first_pos = CalcCursorPos();
+
+  // 一旦現在行を黒で塗りつぶし
+  Rectangle<int> draw_area{first_pos, {8*(kColumns - 1), 16}};
+  FillRectangle(*window_->Writer(), draw_area.pos, draw_area.size, {0, 0, 0});
+
+  const char* history = "";
+  if (cmd_history_index_ >= 0) {
+    // コマンドヒストリから対象の過去のコマンド文字列を取得
+    history = &cmd_history_[cmd_history_index_][0];
+  }
+
+  // linebufを置き換え
+  strcpy(&linebuf_[0], history);
+  // linebuf_index_も文字数で置き換え
+  linebuf_index_ = strlen(history);
+
+  // 過去のコマンド文字列を描画
+  WriteString(*window_->Writer(), first_pos, history, {255, 255, 255});
+  // カーソル位置を移動
+  cursor_.x = linebuf_index_ + 1;
+  return draw_area;
 }
 
 /**
