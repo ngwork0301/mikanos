@@ -67,10 +67,6 @@ std::shared_ptr<ToplevelWindow> text_window;
 unsigned int text_window_layer_id;
 //! テキストボックス内のインデックス
 int text_window_index;
-//! TaskB()用のウィンドウ
-std::shared_ptr<ToplevelWindow> task_b_window;
-//! TaskB()ウィンドウのレイヤーID
-unsigned int task_b_window_layer_id;
 
 /**
  * @fn
@@ -198,81 +194,6 @@ void InputTextWindow(char c) {
 
 /**
  * @fn
- * InitializeTaskBWindow関数
- * 
- * @brief 
- * TaskB()を実行するウィンドウを初期化する
- */
-void InitializeTaskBWindow() {
-  task_b_window = std::make_shared<ToplevelWindow>(
-      160, 52, screen_config.pixel_format, "TaskB Window");
-
-  task_b_window_layer_id = layer_manager->NewLayer()
-    .SetWindow(task_b_window)
-    .SetDraggable(true)
-    .Move({100, 100})
-    .ID();
-  
-  layer_manager->UpDown(task_b_window_layer_id, std::numeric_limits<int>::max());
-}
-
-/**
- * @fn
- * TaskB関数
- * 
- * @brief 
- * TaskBウィンドウにあるカウンタをカウントアップして表示する。
- * @param [in] task_id タスクID
- * @param [in] data タスクにつかうデータ
- */
-void TaskB(uint64_t task_id, int64_t data) {
-  printk("TaskB: task_id=%lu, data=%lu\n", task_id, data);
-  char str[128];
-  int count = 0;
-
-  // タスクインスタンスを取得する
-  __asm__("cli"); // 割り込み禁止
-  Task& task = task_manager->CurrentTask();
-  __asm__("sti"); // 割り込み許可
-
-  // 無限ループ
-  while (true) {
-    ++count;
-    sprintf(str, "%010d", count);
-    // 一旦背景色で塗りつぶしてクリアする
-    FillRectangle(*task_b_window->InnerWriter(), {20, 4}, {8 * 10, 16}, {0xc6, 0xc6, 0xc6});
-
-    // 文字列を描画
-    WriteString(*task_b_window->InnerWriter(), {20, 4}, str, {0, 0, 0});
-
-    // メインタスクに描画イベントを送る
-    Message msg{Message::kLayer, task_id};
-    msg.arg.layer.layer_id = task_b_window_layer_id;
-    msg.arg.layer.op = LayerOperation::Draw;
-    __asm__("cli"); // 割り込み禁止
-    task_manager->SendMessage(1, msg);
-    __asm__("sti"); // 割り込み許可
-
-    // メインタスク側で描画が終わったことを確認
-    while (true) {
-      __asm__("cli"); // 割り込み禁止
-      auto msg = task.ReceiveMessage();
-      if (!msg) {
-        task.Sleep();
-        __asm("sti"); // 割り込み許可
-        continue;
-      }
-
-      if (msg->type == Message::kLayerFinish) {
-        __asm("sti"); // 割り込み許可
-        break;
-      }
-    }
-  }
-}
-
-/**
- * @fn
  * KernelMainNewStack関数
  * 
  * @brief
@@ -320,14 +241,11 @@ extern "C" void KernelMainNewStack(
   InitializeMainWindow();
   // テキストボックスの初期化と描画
   InitializeTextWindow();
-  // TaskBウィンドウの初期化と描画
-  InitializeTaskBWindow();
 
   // 全体の描画
   layer_manager->Draw({{0, 0}, ScreenSize()});
   active_layer->Activate(main_window_layer_id);
   active_layer->Activate(text_window_layer_id);
-  active_layer->Activate(task_b_window_layer_id);
 
   // タイマー割り込み処理の初期化
   acpi::Initialize(acpi_table);
@@ -346,10 +264,7 @@ extern "C" void KernelMainNewStack(
   // 呼び出し直後からタスク切換えが発生するため、他の初期化処理完了後に呼び出すこと
   InitializeTask();
   Task& main_task = task_manager->CurrentTask();
-  const uint64_t taskb_id = task_manager->NewTask()
-    .InitContext(TaskB, 45)
-    .Wakeup()
-    .ID();
+
   // ターミナル用タスクを生成して起床させる
   const uint64_t task_terminal_id = task_manager->NewTask()
     .InitContext(TaskTerminal, 0)
@@ -425,14 +340,6 @@ extern "C" void KernelMainNewStack(
         if (auto act = active_layer->GetActive(); act == text_window_layer_id) {
           // アクティブウィンドウがテキストボックスであれば、その内に文字列を描画
           InputTextWindow(msg->arg.keyboard.ascii);
-        } else if(act == task_b_window_layer_id) {
-          // アクティブウィンドウがTaskBウィンドウであれば、sキーを入力したとき、TaskBをスリープさせる
-          if (msg->arg.keyboard.ascii == 's') {
-            printk("Sleep TaskB: %s\n", task_manager->Sleep(taskb_id).Name());
-          } else if(msg->arg.keyboard.ascii == 'w') {
-            // wキーを入力されたとき、TaskBを起床させる
-            printk("Wakeup TaskB: %s\n", task_manager->Wakeup(taskb_id).Name());
-          }
         } else {
           // その他のウィンドウがアクティブの場合は、そのレイヤーにkKeyPushイベントを送る
           __asm__("cli"); //割り込み禁止
