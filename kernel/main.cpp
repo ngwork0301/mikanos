@@ -201,13 +201,15 @@ void InputTextWindow(char c) {
  * @param [in] frame_buffer_config_ref FrameBufferConfig構造体への参照
  * @param [in] memory_map_ref UEFIのブートサービスが取得したメモリマップへの参照
  * @param [in] acpi_table UEFIが取得したRSDP構造体へのポインタ
+ * @param [in] volume_image UEFIが読み取ったFAT形式のボリュームイメージ
  */
 alignas(16) uint8_t kernel_main_stack[1024 * 1024];
 
 extern "C" void KernelMainNewStack(
     const FrameBufferConfig& frame_buffer_config_ref,
     const MemoryMap& memory_map_ref,
-    const acpi::RSDP& acpi_table) {
+    const acpi::RSDP& acpi_table,
+    void* volume_image) {
 
   // 新しいメモリ領域へ移動
   MemoryMap memory_map{memory_map_ref};
@@ -278,6 +280,23 @@ extern "C" void KernelMainNewStack(
   InitializeMouse();
   // キーボードの初期化
   InitializeKeyboard();
+
+  // ボリュームイメージの中身ををバイナリ形式で表示
+  uint8_t* p = reinterpret_cast<uint8_t*>(volume_image);
+  printk("Volume Image:\n");
+  for (int i = 0; i < 16; ++i) {
+    printk("%04x:", i * 16);  // ボリュームエントリからのオフセットの位置を出力
+    for (int j = 0; j < 8; ++j) {
+      printk(" %02x", *p);  // 2桁の16進数 = 32bit分ずつを8回出力
+      ++p;
+    }
+    printk(" "); // みやすさのため、区切りとしてスペースを入れる
+    for (int j = 0; j < 8; ++j) {
+      printk(" %02x", *p);  // 2桁の16進数 = 32bit分ずつを8回出力
+      ++p;
+    }
+    printk("\n");  // 8バイト分のデータを出力したら、読みやすさのため、改行
+  }
 
   // メインウィンドウに表示するカウンタ変数を初期化
   char str[128];

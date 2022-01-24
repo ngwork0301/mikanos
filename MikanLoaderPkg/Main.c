@@ -285,6 +285,113 @@ void CopyLoadSegments(Elf64_Ehdr* ehdr) {
 
 /**
  * @fn
+ * ReadFile関数
+ * 
+ * @brief 
+ * 指定したファイルを読み出して、bufferに指定したメモリ領域に展開する
+ * @param [in] file EFI_FILE_PROTOCOL
+ * @param [out] buffer 展開するメモリ領域
+ * @return EFI_STATUS 成功したらEFI_SUCCESSを返す
+ */
+EFI_STATUS ReadFile(EFI_FILE_PROTOCOL* file, VOID** buffer) {
+  EFI_STATUS status;
+
+  // ヘッダ部分の読み込み
+  UINTN file_info_size = sizeof(EFI_FILE_INFO) + sizeof(CHAR16) * 12;
+  UINT8 file_info_buffer[file_info_size];
+  status = file->GetInfo(
+    file, &gEfiFileInfoGuid,
+    &file_info_size, file_info_buffer);
+  if (EFI_ERROR(status)) {
+    return status;
+  }
+  
+  EFI_FILE_INFO* file_info = (EFI_FILE_INFO*)file_info_buffer;
+  UINTN file_size = file_info->FileSize;
+
+  // 一時領域のメモリ確保
+  status = gBS->AllocatePool(EfiLoaderData, file_size, buffer);
+  if (EFI_ERROR(status)) {
+    return status;
+  }
+  return file->Read(file, &file_size, *buffer);
+}
+
+/**
+ * @fn
+ * OpenBlockIoProtocolForLoadedImage関数
+ * 
+ * @brief 
+ * Block I/O Protocolを開く
+ * @param [in] image_handle ボリュームイメージのハンドル
+ * @param [out] block_io 読みだしたBlock I/O Protocolのハンドルを入れる
+ * @return EFI_STATUS 成功したらEFI_SUCCESSを返す
+ */
+EFI_STATUS OpenBlockIoProtocolForLoadedImage(
+        EFI_HANDLE image_handle, EFI_BLOCK_IO_PROTOCOL** block_io) {
+  EFI_STATUS status;
+  EFI_LOADED_IMAGE_PROTOCOL* loaded_image;
+
+  // ブートローダからLoadedImageProtocolを開く
+  status = gBS->OpenProtocol(
+      image_handle,
+      &gEfiLoadedImageProtocolGuid,
+      (VOID**)&loaded_image,
+      image_handle,
+      NULL,
+      EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
+  if (EFI_ERROR(status)) {
+    return status;
+  }
+
+  // 取得したloaded_image の DeiceHandleを呼んでイメージが格納されている記憶装置のハンドルから
+  // Block I/O Protocolを取得
+  status = gBS->OpenProtocol(
+    loaded_image->DeviceHandle,
+    &gEfiBlockIoProtocolGuid,
+    (VOID**)block_io,
+    image_handle, // agent handle
+    NULL,
+    EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
+
+  return status;
+}
+
+/**
+ * @fn
+ * ReadBlocks関数
+ * 
+ * @brief 
+ * ブロックデバイスからデータを読み込む
+ * @param [in] block_io Block I/O Protocolのハンドル
+ * @param [in] media_id メディアID
+ * @param [in] read_bytes 読み込むサイズ
+ * @param [out] buffer 読み込んだ内容を展開するメモリ領域
+ * @return EFI_STATUS 
+ */
+EFI_STATUS ReadBlocks(
+      EFI_BLOCK_IO_PROTOCOL* block_io, UINT32 media_id,
+      UINTN read_bytes, VOID** buffer) {
+  EFI_STATUS status;
+
+  // メモリ領域の確保
+  status = gBS->AllocatePool(EfiLoaderData, read_bytes, buffer);
+  if (EFI_ERROR(status)) {
+    return status;
+  }
+
+  status = block_io->ReadBlocks(
+    block_io,
+    media_id,
+    0,    // start LBA
+    read_bytes,
+    *buffer);
+
+  return status;
+}
+
+/**
+ * @fn
  * UefiMain関数
  * 
  * @brief
@@ -365,29 +472,18 @@ EFI_STATUS EFIAPI UefiMain(
   /* //////////// カーネルファイルの読み出しと起動 ///////////////////////////// */
   // カーネルファイルをオープン
   EFI_FILE_PROTOCOL* kernel_file;
-  root_dir->Open(
+  status = root_dir->Open(
     root_dir, &kernel_file, L"\\kernel.elf",
     EFI_FILE_MODE_READ, 0);
+  if (EFI_ERROR(status)) {
+    Print(L"failed to open file '\\kernel.elf': %r\n", status);
+    Halt();
+  }
   Print(L"Opened kernel.elf\n");
-
-  // カーネルファイルのヘッダ部分の読み込み
-  UINTN file_info_size = sizeof(EFI_FILE_INFO) + sizeof(CHAR16) * 12;
-  alignas(alignof(EFI_FILE_INFO)) UINT8 file_info_buffer[file_info_size];
-  kernel_file->GetInfo(
-    kernel_file, &gEfiFileInfoGuid,
-    &file_info_size, file_info_buffer);
-  
-  EFI_FILE_INFO* file_info = (EFI_FILE_INFO*)file_info_buffer;
-  UINTN kernel_file_size = file_info->FileSize;
 
   // 一時領域のメモリ確保
   VOID* kernel_buffer;
-  status = gBS->AllocatePool(EfiLoaderData, kernel_file_size, &kernel_buffer);
-  if (EFI_ERROR(status)) {
-    Print(L"failed to allocate pool: %r\n", status);
-    Halt();
-  }
-  status = kernel_file->Read(kernel_file, &kernel_file_size, kernel_buffer);
+  status = ReadFile(kernel_file, &kernel_buffer);
   if (EFI_ERROR(status)) {
     Print(L"error: %r\n", status);
     Halt();
@@ -417,6 +513,55 @@ EFI_STATUS EFIAPI UefiMain(
     Print(L"failed to free pool: %r\n", status);
     Halt();
   }
+
+  /* //////////// ボリュームイメージのファイルシステムを読み出し ///////////////////////////// */
+  VOID* volume_image;
+
+  EFI_FILE_PROTOCOL* volume_file;
+  status = root_dir->Open(
+    root_dir, &volume_file, L"\\fat_disk",
+    EFI_FILE_MODE_READ, 0);
+  if (status == EFI_SUCCESS) {
+    // 読みだしたファイルの中身をvolume_imageに展開する
+    status = ReadFile(volume_file, &volume_image);
+    if (EFI_ERROR(status)) {
+      Print(L"failed to read volume file: %r", status);
+      Halt();
+    }
+  } else {
+    // Block I/Oを取得
+    EFI_BLOCK_IO_PROTOCOL* block_io;
+    status = OpenBlockIoProtocolForLoadedImage(image_handle, &block_io);
+    if (EFI_ERROR(status)) {
+      Print(L"failed to open Block I/O Protocol: %r\n", status);
+      Halt();
+    }
+
+    // Block I/O Protocolで先頭16MiBを読み出す
+    EFI_BLOCK_IO_MEDIA* media = block_io->Media;
+    UINTN volume_bytes = (UINTN)media->BlockSize * (media->LastBlock + 1);
+    if (volume_bytes > 16 * 1024 * 1024) {
+      // 読み出すサイズは最大16MiBとする。それ以上にするとロードに時間がかかる。
+      volume_bytes = 16 * 1024 * 1024;
+    }
+
+    // 読みだしたブロックの情報を出力
+    Print(L"Reading %lu bytes (Present %d, BlockSize %u, LastBlock %u)\n",
+        volume_bytes, media->MediaPresent, media->BlockSize, media->LastBlock);
+    
+    // ブロックからルートディレクトリのディレクトリエントリを探す
+    status = ReadBlocks(block_io, media->MediaId, volume_bytes, &volume_image);
+    if (EFI_ERROR(status)) {
+      Print(L"failed to read blocks: %r\n", status);
+      Halt();
+    }
+  }
+
+
+
+
+  /* //////////////////////////////////////////////////////////////////////////// */
+
 
   // カーネルを起動する前にブートサービスを停止する
   status = gBS->ExitBootServices(image_handle, memmap.map_key);
@@ -468,9 +613,10 @@ EFI_STATUS EFIAPI UefiMain(
 
   typedef void EntryPointType(const struct FrameBufferConfig*,
                               const struct MemoryMap*,
-                              const VOID*);
+                              const VOID*,
+                              VOID*);
   EntryPointType* entry_point = (EntryPointType*)entry_addr;
-  entry_point(&config, &memmap, acpi_table);
+  entry_point(&config, &memmap, acpi_table, volume_image);
   /* ////////////////////////////////////////////////////////////////////// */
 
   // 画面出力処理  
