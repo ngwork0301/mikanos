@@ -1,5 +1,6 @@
 #include "terminal.hpp"
 
+#include "fat.hpp"
 #include "font.hpp"
 #include "layer.hpp"
 #include "logger.hpp"
@@ -257,6 +258,39 @@ void Terminal::ExecuteLine() {
       sprintf(s, "%02x:%02x.%d vend=%04x head=%02x class=%02x.%02x.%02x\n",
           dev.bus, dev.device, dev.function, vender_id, dev.header_type,
           dev.class_code.base, dev.class_code.sub, dev.class_code.interface);
+      Print(s);
+    }
+  } else if(strcmp(command, "ls") == 0) {
+    // ルートディレクトリの取得
+    auto root_dir_entries = fat::GetSectorByCluster<fat::DirectoryEntry>(
+      fat::boot_volume_image->root_cluster);
+    // ルートディレクトリ内のディレクトリエントリを取得して、1クラスタあたりのエントリ数を取得
+    // クラスタ　＞ ブロック＝セクタ、＞ バイト
+    auto entries_per_cluster =
+      fat::boot_volume_image->bytes_per_sector / sizeof(fat::DirectoryEntry)
+      * fat::boot_volume_image->sectors_per_cluster;
+    char base[9], ext[4];  //! ファイルの短名(拡張子を除く)、拡張子
+    char s[64];  //! ファイル名(拡張子含む)
+    // ディレクトリエントリごとにループ
+    for (int i = 0; i < entries_per_cluster; ++i) {
+      // 短名を取得
+      ReadName(root_dir_entries[i], base, ext);
+      if (base[0] == 0x00) {
+        // 0x00のとき、このディレクトリエントリは空であとのエントリも無効のため終了
+        break;
+      } else if (static_cast<uint8_t>(base[0]) == 0xe5) {
+        // 0xe5のときは、空のためスキップ
+        continue;
+      } else if (root_dir_entries[i].attr == fat::Attribute::kLongName) {
+        // 長名専用の構造になっているためスキップ
+        continue;
+      }
+
+      if (ext[0]) {
+        sprintf(s, "%s.%s\n", base, ext);
+      } else {
+        sprintf(s, "%s\n", base);
+      }
       Print(s);
     }
   } else if (command[0] != 0) {

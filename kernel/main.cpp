@@ -16,6 +16,7 @@
 #include "acpi.hpp"
 #include "asmfunc.h"
 #include "console.hpp"
+#include "fat.hpp"
 #include "font.hpp"
 #include "frame_buffer_config.hpp"
 #include "graphics.hpp"
@@ -234,6 +235,9 @@ extern "C" void KernelMainNewStack(
   // 割り込み処理を初期化
   InitializeInterrupt();
 
+  // FATボリュームの読み取り
+  fat::Initialize(volume_image);
+
   // PCIバスをスキャンしてデバイスをロードする。
   InitializePCI();
 
@@ -282,21 +286,21 @@ extern "C" void KernelMainNewStack(
   InitializeKeyboard();
 
   // ボリュームイメージの中身ををバイナリ形式で表示
-  uint8_t* p = reinterpret_cast<uint8_t*>(volume_image);
-  printk("Volume Image:\n");
-  for (int i = 0; i < 16; ++i) {
-    printk("%04x:", i * 16);  // ボリュームエントリからのオフセットの位置を出力
-    for (int j = 0; j < 8; ++j) {
-      printk(" %02x", *p);  // 2桁の16進数 = 32bit分ずつを8回出力
-      ++p;
-    }
-    printk(" "); // みやすさのため、区切りとしてスペースを入れる
-    for (int j = 0; j < 8; ++j) {
-      printk(" %02x", *p);  // 2桁の16進数 = 32bit分ずつを8回出力
-      ++p;
-    }
-    printk("\n");  // 8バイト分のデータを出力したら、読みやすさのため、改行
-  }
+  // uint8_t* p = reinterpret_cast<uint8_t*>(volume_image);
+  // printk("Volume Image:\n");
+  // for (int i = 0; i < 16; ++i) {
+  //   printk("%04x:", i * 16);  // ボリュームエントリからのオフセットの位置を出力
+  //   for (int j = 0; j < 8; ++j) {
+  //     printk(" %02x", *p);  // 2桁の16進数 = 32bit分ずつを8回出力
+  //     ++p;
+  //   }
+  //   printk(" "); // みやすさのため、区切りとしてスペースを入れる
+  //   for (int j = 0; j < 8; ++j) {
+  //     printk(" %02x", *p);  // 2桁の16進数 = 32bit分ずつを8回出力
+  //     ++p;
+  //   }
+  //   printk("\n");  // 8バイト分のデータを出力したら、読みやすさのため、改行
+  // }
 
   // メインウィンドウに表示するカウンタ変数を初期化
   char str[128];
