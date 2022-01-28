@@ -184,14 +184,11 @@ void Terminal::Scroll1() {
  * Terminal::Printメソッド
  * 
  * @brief 
- * 指定された文字列をターミナルへ表示する
- * @param s 表示する文字列
+ * 1文字ずつ出力する
+ * @param c 
  */
-void Terminal::Print(const char* s) {
-  // 一時的にカーソルは非表示
-  DrawCursor(false);
-  
-  // 1行改行する
+void Terminal::Print(char c) {
+    // 1行改行する
   auto newline = [this]() {
     cursor_.x = 0;
     if (cursor_.y < kRows - 1) {
@@ -203,20 +200,34 @@ void Terminal::Print(const char* s) {
     }
   };
 
-  while(*s) {
-    if (*s == '\n') {
-      // 改行コードは、1行改行する
+  if (c == '\n') {
+    // 改行コードは、1行改行する
+    newline();
+  } else {
+    WriteAscii(*window_->Writer(), CalcCursorPos(), c, {255, 255, 255});
+    if (cursor_.x == kColumns - 1) {
+      // 出力する文字数が1行の最大文字数以上になったっら1行改行して出力
       newline();
     } else {
-      WriteAscii(*window_->Writer(), CalcCursorPos(), *s, {255, 255, 255});
-      if (cursor_.x == kColumns - 1) {
-        // 出力する文字数が1行の最大文字数以上になったっら1行改行して出力
-        newline();
-      } else {
-        ++cursor_.x;
-      }
+      ++cursor_.x;
     }
+  }
+}
 
+/**
+ * @fn
+ * Terminal::Printメソッド
+ * 
+ * @brief 
+ * 指定された文字列をターミナルへ表示する
+ * @param s 表示する文字列
+ */
+void Terminal::Print(const char* s) {
+  // 一時的にカーソルは非表示
+  DrawCursor(false);
+
+  while(*s) {
+    Print(*s);
     ++s;
   }
 
@@ -292,6 +303,38 @@ void Terminal::ExecuteLine() {
         sprintf(s, "%s\n", base);
       }
       Print(s);
+    }
+  } else if(strcmp(command, "cat") == 0) {
+    char s[64];
+
+    // ファイルエントリを探す
+    auto file_entry = fat::FindFile(first_arg);
+    if (!file_entry) {
+      sprintf(s, "no such file: %s\n", first_arg);
+      Print(s);
+    } else {
+      auto cluster = file_entry->FirstCluster();
+      auto remain_bytes = file_entry->file_size;
+
+      // 一時的にカーソルを非表示
+      DrawCursor(false);
+      // クラスタチェーンをたどって、クラスタごとにループ
+      while (cluster != 0 && cluster != fat::kEndOfClusterchain) {
+        // そのクラスタのブロックのポインタを文字列として取得
+        char* p = fat::GetSectorByCluster<char>(cluster);
+
+        int i = 0;
+        for (; i < fat::bytes_per_cluster && i < remain_bytes; ++i) {
+          // 1文字ずつ表示する
+          Print(*p);
+          ++p;
+        }
+
+        // 出力した文字数分、残りバイト数から引く
+        remain_bytes -= i;
+        cluster = fat::NextCluster(cluster);
+      }
+      DrawCursor(true);
     }
   } else if (command[0] != 0) {
     Print("no such command: ");
