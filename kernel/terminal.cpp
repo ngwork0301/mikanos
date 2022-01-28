@@ -1,6 +1,5 @@
 #include "terminal.hpp"
 
-#include "fat.hpp"
 #include "font.hpp"
 #include "layer.hpp"
 #include "logger.hpp"
@@ -337,9 +336,15 @@ void Terminal::ExecuteLine() {
       DrawCursor(true);
     }
   } else if (command[0] != 0) {
-    Print("no such command: ");
-    Print(command);
-    Print("\n");
+    // 打ち込まれた名前が組み込みコマンド以外ならファイルを探す
+    auto file_entry = fat::FindFile(command);
+    if(!file_entry) {
+      Print("no such command: ");
+      Print(command);
+      Print("\n");
+    } else {
+      ExecuteFile(*file_entry);
+    }
   }
 }
 
@@ -387,6 +392,39 @@ Rectangle<int> Terminal::HistoryUpDown(int direction) {
 
 /**
  * @fn
+ * Terminal::ExecuteFileメソッド
+ * 
+ * @brief 
+ * ファイルを読み込んで実行する
+ * @param file_entry 実行するファイルのエントリポインタ
+ */
+void Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry){
+  auto cluster = file_entry.FirstCluster();
+  auto remain_bytes = file_entry.file_size;
+
+  std::vector<uint8_t> file_buf(remain_bytes);
+  auto p = &file_buf[0];
+
+  // クラスタごとにループして、複数クラスタにまたがったファイルの中身のデータをfile_bufにコピー
+  while (cluster != 0 && cluster != fat::kEndOfClusterchain) {
+    //! 残りバイト数かそのクラスタのバイト数かどちらか大きい方のバイト数
+    const auto copy_bytes = fat::bytes_per_cluster < remain_bytes ?
+      fat::bytes_per_cluster : remain_bytes;
+    memcpy(p, fat::GetSectorByCluster<uint8_t>(cluster), copy_bytes);
+
+    remain_bytes -= copy_bytes;
+    p += copy_bytes;
+    cluster = fat::NextCluster(cluster);
+  }
+
+  using Func = void ();
+  auto f = reinterpret_cast<Func*>(&file_buf[0]);
+  f();
+}
+
+
+/**
+ * @fn
  * TaskTerminal関数
  * 
  * @brief 
@@ -412,6 +450,7 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
       __asm__("sti");  // 割り込みを許可
       continue;
     }
+    __asm__("sti");  // 割り込みを許可
 
     switch (msg->type) {
       case Message::kTimerTimeout:
