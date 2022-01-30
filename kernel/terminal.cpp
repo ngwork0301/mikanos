@@ -1,9 +1,54 @@
 #include "terminal.hpp"
 
+#include "elf.hpp"
 #include "font.hpp"
 #include "layer.hpp"
 #include "logger.hpp"
 #include "pci.hpp"
+
+namespace {
+  /**
+   * @fn
+   * MakeArgVector関数
+   * @brief 
+   * 引数ベクトルを作成する
+   * @param command コマンド
+   * @param first_arg 引数文字列
+   * @return std::vector<char*> 
+   */
+  std::vector<char*> MakeArgVector(char* command, char* first_arg) {
+    std::vector<char*> argv;
+    argv.push_back(command);
+
+    char* p = first_arg;
+    // 基本１文字ずつループ ※途中連続する文字数分進む
+    while (true) {
+      // スペースが続く限り除去
+      while (isspace(p[0])) {
+        ++p;
+      }
+      // 末尾であれば終了
+      if (p[0] == 0) {
+        break;
+      }
+      argv.push_back(p);
+
+      // 後続の文字があるならその分まで進む
+      while(p[0] != 0 && !isspace(p[0])) {
+        ++p;
+      }
+      // 末尾であれば終了
+      if (p[0] == 0) {
+        break;
+      }
+      // 現在見ている文字をヌル文字にして次へ
+      p[0] = 0;
+      ++p;
+    }
+
+    return argv;
+  }
+} // namepace
 
 /**
  * @fn Terminal::Terminalコンストラクタ
@@ -343,7 +388,7 @@ void Terminal::ExecuteLine() {
       Print(command);
       Print("\n");
     } else {
-      ExecuteFile(*file_entry);
+      ExecuteFile(*file_entry, command, first_arg);
     }
   }
 }
@@ -396,9 +441,11 @@ Rectangle<int> Terminal::HistoryUpDown(int direction) {
  * 
  * @brief 
  * ファイルを読み込んで実行する
- * @param file_entry 実行するファイルのエントリポインタ
+ * @param [in] file_entry 実行するファイルのエントリポインタ
+ * @param [in] command コマンド
+ * @param [in] first_arg 第一引数
  */
-void Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry){
+void Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command, char* first_arg){
   auto cluster = file_entry.FirstCluster();
   auto remain_bytes = file_entry.file_size;
 
@@ -417,9 +464,28 @@ void Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry){
     cluster = fat::NextCluster(cluster);
   }
 
-  using Func = void ();
-  auto f = reinterpret_cast<Func*>(&file_buf[0]);
-  f();
+  // ELF形式かどうか
+  auto elf_header = reinterpret_cast<Elf64_Ehdr*>(&file_buf[0]);
+  if (memcmp(elf_header->e_ident, "\x7f" "ELF", 4) != 0) {
+    using Func = void ();
+    auto f = reinterpret_cast<Func*>(&file_buf[0]);
+    f();
+    return;
+  }
+  
+  // 引数のベクタ配列を作成する
+  auto argv = MakeArgVector(command, first_arg);
+
+  auto entry_addr = elf_header->e_entry;
+  entry_addr += reinterpret_cast<uintptr_t>(&file_buf[0]);
+
+  using Func = int (int, char**);
+  auto f = reinterpret_cast<Func*>(entry_addr);
+  auto ret = f(argv.size(), &argv[0]);
+
+  char s[64];
+  sprintf(s, "app exited. ret = %d\n", ret);
+  Print(s);
 }
 
 
