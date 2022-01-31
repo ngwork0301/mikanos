@@ -1,38 +1,5 @@
-/**
- * @fn
- * strncmp関数
- * @brief 
- * 指定された文字数分比較する
- * 異なる文字数の場合は、比較できるところまでをやってその文字数を返す。
- * @param a 比較文字列１
- * @param b 比較文字列２
- * @return int 比較した文字数
- */
-int strcmp(const char* a, const char* b) {
-    int i = 0;
-    for (; a[i] != 0 && b[i] != 0; ++i){
-        if (a[i] != b[i]) {
-            return a[i] - b[i];
-        }
-    }
-    return a[i] - b[i];
-}
-
-/**
- * @fn
- * atoi関数
- * @brief 
- * 文字列をlongへ変換する
- * @param s 変換する数値文字列
- * @return long 返還後の数値
- */
-long atol(const char* s) {
-    long v = 0;
-    for (int i = 0; s[i] != 0; ++i) {
-        v = v * 10 + (s[i] - '0');
-    }
-    return v;
-}
+#include <cstring>
+#include <cstrlib>
 
 //! スタックへの先頭ポインタ
 int stack_ptr;
