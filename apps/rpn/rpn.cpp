@@ -1,5 +1,5 @@
 #include <cstring>
-#include <cstrlib>
+#include <cstdlib>
 
 //! スタックへの先頭ポインタ
 int stack_ptr;
