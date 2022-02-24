@@ -14,4 +14,7 @@ extern "C" {
   uint64_t GetCR3();
   void SetCR3(uint64_t value);
   void SwitchContext(void* next_ctx, void* current_ctx);
+  void LoadTR(uint16_t sel);
+  void IntHandlerLAPICTimer();
+  void RestoreContext(void* task_context);
 }

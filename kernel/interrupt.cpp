@@ -75,11 +75,12 @@ namespace {
    * LAPIC割り込みハンドラの定義
    * @param [in] frame InterruptFrame(未使用)
    */
-  __attribute__((interrupt))
-  void IntHandlerLAPICTimer(InterruptFrame* frame) {
-    // タイマー割り込み時の動作を呼び出す。割り込み処理の終了通知を呼び出し先でおこなう。
-    LAPICTimerOnInterrupt();
-  }
+  // 20.3 で割り込みフレーム情報の伝搬のため、アセンブリ実装に移す
+  // __attribute__((interrupt))
+  // void IntHandlerLAPICTimer(InterruptFrame* frame) {
+  //   // タイマー割り込み時の動作を呼び出す。割り込み処理の終了通知を呼び出し先でおこなう。
+  //   LAPICTimerOnInterrupt();
+  // }
 }
 
 /**

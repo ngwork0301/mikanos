@@ -168,12 +168,13 @@ unsigned long lapic_timer_freq;
  * 
  * @brief
  * タイマー割り込みの処理をして、必要ならタイムを切り替える。
+ * @param [in] ctx_stack 割り込みフレームをつかって構築したコンテキスト構造体
  */
-void LAPICTimerOnInterrupt() {
+extern "C" void LAPICTimerOnInterrupt(const TaskContext& ctx_stack) {
   const bool task_timer_timeout = timer_manager->Tick();
   NotifyEndOfInterrupt();
 
   if (task_timer_timeout) {
-    task_manager->SwitchTask();
+    task_manager->SwitchTask(ctx_stack);
   }
 }

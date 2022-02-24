@@ -232,6 +232,9 @@ extern "C" void KernelMainNewStack(
   // メモリ管理の初期化
   InitializeMemoryManager(memory_map);
 
+  // 割り込み用のスタック領域(TSS)を初期化
+  InitializeTSS();
+
   // 割り込み処理を初期化
   InitializeInterrupt();
 

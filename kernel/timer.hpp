@@ -77,5 +77,3 @@ const int kTimerFreq = 100;
 const int kTaskTimerPeriod = static_cast<int>(kTimerFreq * 0.02);
 //! タスク切り替え用タイマーの持つ数値(他のタイマーで使わない値=int最小の値)
 const int kTaskTimerValue = std::numeric_limits<int>::min();
-
-void LAPICTimerOnInterrupt();

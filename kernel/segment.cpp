@@ -2,9 +2,15 @@
 #include "segment.hpp"
 
 #include "asmfunc.h"
+#include "error.hpp"
+#include "logger.hpp"
+#include "memory_manager.hpp"
 
 namespace {
-  std::array<SegmentDescriptor, 3> gdt;
+  std::array<SegmentDescriptor, 7> gdt;
+  std::array<uint32_t, 26> tss;
+
+  static_assert((kTSS >> 3) + 1 < gdt.size());
 }
 
 /**
@@ -50,6 +56,11 @@ void SetCodeSegment(SegmentDescriptor& desc,
  * 
  * @brief
  * GDTのデータセグメントをセットアップする
+ * @param [in] desc セグメントディスクリプタ
+ * @param [in] type セグメントタイプ
+ * @param [in] descriptor_privilege_level ディスクリプタ権限
+ * @param [in, out] base メモリのペースアドレス
+ * @param [in] limit 書き込むメモリの上限
  */
 void SetDataSegment(SegmentDescriptor& desc,
                     DescriptorType type,
@@ -88,6 +99,59 @@ void SetupSegments() {
 
 /**
  * @fn
+ * SetSystemSegment関数
+ * @brief Set the System Segment object
+ * システムセグメントを設定する。
+ * @param [in] desc セグメントディスクリプタ
+ * @param [in] type セグメントタイプ
+ * @param [in] descriptor_privilege_level ディスクリプタ権限
+ * @param [in, out] base メモリのペースアドレス
+ * @param [in] limit 書き込むメモリの上限
+ */
+void SetSystemSegment(SegmentDescriptor& desc,
+                      DescriptorType type,
+                      unsigned int descriptor_privilege_level,
+                      uint32_t base,
+                      uint32_t limit) {
+  SetCodeSegment(desc, type, descriptor_privilege_level, base, limit);
+  desc.bits.system_segment = 0;  // わかりにくいがシステムセグメントのときはビットフラグを0
+  desc.bits.long_mode = 0;
+}
+
+/**
+ * @fn
+ * InitializeTSS関数
+ * @brief 
+ * TSSを初期化してGDTに設定する
+ */
+void InitializeTSS() {
+  // CPUが割り込み時に積む40バイト分のInterruptFrameのメモリ領域を確保
+  const int kRSP0Frames = 8;
+  auto [ stack0, err ] = memory_manager->Allocate(kRSP0Frames);
+  if (err) {
+    Log(kError, "failed to allocate rsp0: %s\n", err.Name());
+    exit(1);
+  }
+  // スタック領域なので、確保した領域の末尾のアドレスを入れる
+  uint64_t rsp0 =
+      reinterpret_cast<uint64_t>(stack0.Frame()) + kRSP0Frames * 4096;
+  // TSS構造体は、先頭4バイト分予約されていて、8バイト区切りが4バイト分ずれるので分割
+  tss[1] = rsp0 & 0xffffffff;  // 下位4バイト
+  tss[2] = rsp0 >> 32;         // 上位4バイト
+
+  uint64_t tss_addr = reinterpret_cast<uint64_t>(&tss[0]);
+  // GDTの5つ目のエントリとしてTSSのコードセグメントを登録
+  SetSystemSegment(gdt[kTSS >> 3], DescriptorType::kTSSAvailable, 0,
+                   tss_addr & 0xffffffff, sizeof(tss)-1);
+  // GDTの6つ目のエントリとして、TSSのデータセグメントを登録
+  gdt[(kTSS >> 3) + 1].data = tss_addr >> 32;
+
+  LoadTR(kTSS);
+}
+
+
+/**
+ * @fn
  * InitializeSegmentation関数
  * 
  * @brief
@@ -101,3 +165,4 @@ void InitializeSegmentation() {
   SetDSAll(kKernelDS);
   SetCSSS(kKernelCS, kKernelSS);
 }
+

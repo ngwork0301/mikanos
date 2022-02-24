@@ -204,37 +204,20 @@ Task& TaskManager::NewTask() {
  * TaskManager::SwitchTaskメソッド
  * @brief
  * 次のタスクへの切り替えをおこなう。
+ * @param [in] current_cts 切り替え先タスクのコンテキスト構造体
+ * @param [in] current_sleep 切り替え元タスクをスリープするかどうか
  */
-void TaskManager::SwitchTask(bool current_sleep) {
-  // Runキューから最前のタスクを取り出し
-  auto& level_queue = running_[current_level_];
-  Task* current_task = level_queue.front();
-  level_queue.pop_front();
-  if (!current_sleep) {
-    // スリープしないのであれば、Runキューの末尾に再度タスクを入れる
-    level_queue.push_back(current_task);
-  }
-  if (level_queue.empty()) {
-    // このレベルのRunキューが空になったら、レベルの変更
-    level_changed_ = true;
-  }
+void TaskManager::SwitchTask(const TaskContext& current_ctx,
+                             bool current_sleep) {
+  // 切り替え元のコンテキスト構造体のアドレスを取得して
+  // 受け取ったコンテキスト構造体で書き換える
+  TaskContext& task_ctx = task_manager->CurrentTask().Context();
+  memcpy(&task_ctx, &current_ctx, sizeof(TaskContext));
 
-  if (level_changed_) {
-    // レベルの変更フラグをfalseに戻す
-    level_changed_ = false;
-    // 最高レベルから順に下げていく
-    for (int lv = kMaxLevel; lv >= 0; --lv) {
-      if (!running_[lv].empty()) {
-        current_level_ = lv;
-        break;
-      }
-    }
+  Task* current_task = RotateCurrentRunQueue(current_sleep);
+  if (&CurrentTask() != current_task) {
+    RestoreContext(&CurrentTask().Context());
   }
-  // 次のタスク
-  Task* next_task = running_[current_level_].front();
-
-  // 現在のタスクと次のタスクのコンテキストの切り替え
-  SwitchContext(&next_task->Context(), &current_task->Context());
 }
 
 /**
@@ -254,7 +237,8 @@ void TaskManager::Sleep(Task* task) {
   task->SetRunning(false);
   if (task == running_[current_level_].front()) {
     // 現在実行中の場合は、スリープさせるために次のタスクへ即時コンテキストスイッチする
-    SwitchTask(true);  // bool引数は、切り替え元のタスクをスリープさせるかどうか
+    Task* current_task = RotateCurrentRunQueue(true);
+    SwitchContext(&CurrentTask().Context(), &current_task->Context());  // bool引数は、切り替え元のタスクをスリープさせるかどうか
     return;
   }
   // Runキューからスリープさせるタスクを削除
@@ -417,6 +401,43 @@ void TaskManager::ChangeLevelRunning(Task* task, int level){
     current_level_ = level;
     level_changed_ = true;
   }
+}
+
+/**
+ * @fn
+ * TaskManager::RotateCurrentRunQueueメソッド
+ * @brief 
+ * 現在のRunキューを次に切り替える
+ * @param current_sleep 現在のタスクをスリープするかどうか
+ * @return Task* 
+ */
+Task* TaskManager::RotateCurrentRunQueue(bool current_sleep) {
+  // Runキューから最前のタスクを取り出し
+  auto& level_queue = running_[current_level_];
+  Task* current_task = level_queue.front();
+  level_queue.pop_front();
+  if (!current_sleep) {
+    // スリープしないのであれば、Runキューの末尾に再度タスクを入れる
+    level_queue.push_back(current_task);
+  }
+  if (level_queue.empty()) {
+    // このレベルのRunキューが空になったら、レベルの変更
+    level_changed_ = true;
+  }
+
+  if (level_changed_) {
+    // レベルの変更フラグをfalseに戻す
+    level_changed_ = false;
+    // 最高レベルから順に下げていく
+    for (int lv = kMaxLevel; lv >= 0; --lv) {
+      if (!running_[lv].empty()) {
+        current_level_ = lv;
+        break;
+      }
+    }
+  }
+
+  return current_task;
 }
 
 TaskManager* task_manager;
