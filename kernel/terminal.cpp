@@ -798,13 +798,8 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
   if (auto err = SetupPageMaps(stack_frame_addr, 1)) {
     return err;
   }
-  Print("WANA4: complete SetupPageMaps for stack of app.\n");
 
   auto entry_addr = elf_header->e_entry;
-  char tmp_str[128];
-  sprintf(tmp_str, "WANA5: argc.value = %d, argv= %04lx, entry_addr = %16lx, stack_frame_addr.value = %16lx.\n",
-      argc.value, reinterpret_cast<uint64_t*>(argv), entry_addr, stack_frame_addr.value);
-  Print(tmp_str);
   // CS/SSレジスタを切り替えて、ユーザセグメントとして実行
   CallApp(argc.value, argv, 3 << 3 | 3, 4 << 3 | 3, entry_addr,
       stack_frame_addr.value + 4096 - 8);
@@ -814,7 +809,6 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
   sprintf(s, "app exited. ret = %d\n", ret);
   Print(s);
   */
-  Print("WANA6: complete CallApp.\n");
 
   // マッピングした階層ページング構造を解放する
   const auto addr_first = GetFirstLoadAddress(elf_header);
