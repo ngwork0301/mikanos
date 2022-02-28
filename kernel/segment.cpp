@@ -88,10 +88,11 @@ void SetupSegments() {
   // GDTの3つめのディスクリプタはデータセグメントディスクリプタ
   SetDataSegment(gdt[2], DescriptorType::kReadWrite, 0, 0, 0xfffff);
   // DPLがリング3=アプリケーションがつかうセグメントを設定
-  // コードセグメントディスクリプタ＝読み込み・実行可能
-  SetCodeSegment(gdt[3], DescriptorType::kExecuteRead, 3, 0, 0xfffff);
+  // sysretで戻ってくるときのために、データセグメントを3、コードセグメントを4にしておく
   // データセグメントディスクリプタ＝読み書き可能
-  SetDataSegment(gdt[4], DescriptorType::kReadWrite, 3, 0, 0xfffff);
+  SetDataSegment(gdt[3], DescriptorType::kReadWrite, 3, 0, 0xfffff);
+  // コードセグメントディスクリプタ＝読み込み・実行可能
+  SetCodeSegment(gdt[4], DescriptorType::kExecuteRead, 3, 0, 0xfffff);
   
   // 作成したGDTをCPUに登録(既存のGDTは破棄する)
   LoadGDT(sizeof(gdt) - 1, reinterpret_cast<uintptr_t>(&gdt[0]));

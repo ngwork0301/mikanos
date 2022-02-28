@@ -1,6 +1,7 @@
 #include <cstring>
 #include <cstdlib>
-#include "../../kernel/graphics.hpp"
+#include <cstdint>
+#include "../../kernel/logger.hpp"
 
 // OSの関数ポインタを取得
 // auto& printk = *reinterpret_cast<int (*)(const char*, ...)>(0x000000000010b030);
@@ -37,6 +38,8 @@ void Push(long value) {
     stack[stack_ptr] = value;
 }
 
+extern "C" int64_t SyscallLogString(LogLevel, const char*);
+
 /**
  * @fn
  * main関数
@@ -53,15 +56,18 @@ extern "C" int main(int argc, char** argv) {
             long a = Pop();
             Push(a + b);
             // printk("[%d] <- %ld\n", stack_ptr, a + b);
+            SyscallLogString(kWarn, "+");
         } else if(strcmp(argv[i], "-") == 0) {
             long b = Pop();
             long a = Pop();
             Push(a - b);
             // printk("[%d] <- %ld\n", stack_ptr, a - b);
+            SyscallLogString(kWarn, "-");
         } else {
             long a = atol(argv[i]);
             Push(a);
             // printk("[%d] <- %ld\n", stack_ptr, a);
+            SyscallLogString(kWarn, "#");
         }
     }
 
@@ -71,6 +77,8 @@ extern "C" int main(int argc, char** argv) {
     if (stack_ptr < 0) {
         return 0;
     }
+    SyscallLogString(kWarn, "\nhello, this is rpn\n");
+
     // far returnできないので、無限ループしておく
     while (1);
     // return static_cast<int>(Pop());

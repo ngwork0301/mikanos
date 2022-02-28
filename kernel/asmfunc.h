@@ -17,4 +17,6 @@ extern "C" {
   void LoadTR(uint16_t sel);
   void IntHandlerLAPICTimer();
   void RestoreContext(void* task_context);
+  void WriteMSR(uint32_t msr, uint64_t value);
+  void SyscallEntry(void);
 }

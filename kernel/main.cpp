@@ -31,6 +31,7 @@
 #include "paging.hpp"
 #include "pci.hpp"
 #include "segment.hpp"
+#include "syscall.hpp"
 #include "task.hpp"
 #include "terminal.hpp"
 #include "timer.hpp"
@@ -268,6 +269,8 @@ extern "C" void KernelMainNewStack(
   timer_manager->AddTimer(Timer{kTimer05Sec, kTextboxCursorTimer});
   bool textbox_cursor_visible = false;
 
+  // 上位アプリがシステムコールを呼び出せるように初期化
+  InitializeSyscall();
 
   // タスクタイマーの初期化。
   // 呼び出し直後からタスク切換えが発生するため、他の初期化処理完了後に呼び出すこと
