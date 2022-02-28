@@ -184,6 +184,12 @@ void InitializeInterrupt() {
   // xHCIマウスイベントの割り込み処理
   set_idt_entry(InterruptVector::kXHCI, IntHandlerXHCI);
   // タイマー割り込み処理
+  // スタック領域の切り替えでIST1を使うように設定する
+  SetIDTEntry(idt[InterruptVector::kLAPICTimer],
+              MakeIDTAttr(DescriptorType::kInterruptGate, 0 /* DPL */,
+                          true /* present */, kISTForTimer /* IST */),
+              reinterpret_cast<uint64_t>(IntHandlerLAPICTimer),
+              kKernelCS);
   set_idt_entry(InterruptVector::kLAPICTimer, IntHandlerLAPICTimer);
   // CPU例外のイベント
   set_idt_entry(0, IntHandlerDE);

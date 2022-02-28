@@ -121,24 +121,47 @@ void SetSystemSegment(SegmentDescriptor& desc,
 
 /**
  * @fn
+ * SetTSS関数
+ * @brief 
+ * TSSを設定する
+ * @param index TSS構造体のインデックス
+ * @param value 設定する値
+ */
+void SetTSS(int index, uint64_t value) {
+  // TSS構造体は、先頭4バイト分予約されていて、8バイト区切りが4バイト分ずれるので分割
+  tss[index]      = value & 0xffffffff;  // 下位4バイト
+  tss[index + 1]  = value >> 32;         // 上位4バイト
+}
+
+/**
+ * @fn
+ * AllocateStackArea関数
+ * @brief 
+ * 指定したページ数のスタック領域を確保する
+ * @param num_4kframes 確保するページ数
+ * @return uint64_t 確保したメモリ領域のアドレス
+ */
+uint64_t AllocateStackArea(int num_4kframes) {
+  auto [ stk, err ] = memory_manager->Allocate(num_4kframes);
+  if (err) {
+    Log(kError, "failed to allocate stack area: %s\n", err.Name());
+    exit(1);
+  }
+  // スタック領域なので、確保した領域の末尾のアドレスを入れる
+  return reinterpret_cast<uint64_t>(stk.Frame()) + num_4kframes * 4096;
+}
+
+/**
+ * @fn
  * InitializeTSS関数
  * @brief 
  * TSSを初期化してGDTに設定する
  */
 void InitializeTSS() {
-  // CPUが割り込み時に積む40バイト分のInterruptFrameのメモリ領域を確保
-  const int kRSP0Frames = 8;
-  auto [ stack0, err ] = memory_manager->Allocate(kRSP0Frames);
-  if (err) {
-    Log(kError, "failed to allocate rsp0: %s\n", err.Name());
-    exit(1);
-  }
-  // スタック領域なので、確保した領域の末尾のアドレスを入れる
-  uint64_t rsp0 =
-      reinterpret_cast<uint64_t>(stack0.Frame()) + kRSP0Frames * 4096;
-  // TSS構造体は、先頭4バイト分予約されていて、8バイト区切りが4バイト分ずれるので分割
-  tss[1] = rsp0 & 0xffffffff;  // 下位4バイト
-  tss[2] = rsp0 >> 32;         // 上位4バイト
+  // CPUが割り込み時に積む40バイト分のInterruptFrameのメモリ領域を確保してRSP0に設定
+  SetTSS(1, AllocateStackArea(8));
+  // 割り込み後のスタック領域の入れ替えをISTに設定
+  SetTSS(7 + 2 * kISTForTimer, AllocateStackArea(8));
 
   uint64_t tss_addr = reinterpret_cast<uint64_t>(&tss[0]);
   // GDTの5つ目のエントリとしてTSSのコードセグメントを登録
