@@ -1,6 +1,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdint>
+#include <cstdio>
 #include "../../kernel/logger.hpp"
 
 // OSの関数ポインタを取得
@@ -78,6 +79,13 @@ extern "C" int main(int argc, char** argv) {
         return 0;
     }
     SyscallLogString(kWarn, "\nhello, this is rpn\n");
+
+    // 試しにlong型の変数をprintfする
+    long result = 0;
+    if (stack_ptr >= 0) {
+        result = Pop();
+    }
+    printf("%ld\n", result);
 
     // far returnできないので、無限ループしておく
     while (1);

@@ -368,9 +368,11 @@ Error LoadELF(Elf64_Ehdr* ehdr) {
 /**
  * @fn Terminal::Terminalコンストラクタ
  * @brief Construct a new Terminal:: Terminal object
+ * @
  * 
  */
-Terminal::Terminal() {
+Terminal::Terminal(uint64_t task_id) {
+  task_id_ = task_id;
   // ターミナルウィンドウの生成
   window_ = std::make_shared<ToplevelWindow>(
     kColumns * 8 + 8 + ToplevelWindow::kMarginX,
@@ -580,18 +582,44 @@ void Terminal::Print(char c) {
  * @brief 
  * 指定された文字列をターミナルへ表示する
  * @param s 表示する文字列
+ * @param [in] len std::optional<size_t> 文字数
  */
-void Terminal::Print(const char* s) {
+void Terminal::Print(const char* s, std::optional<size_t> len) {
+  // 現在のカーソル位置を取得
+  const auto cursor_before = CalcCursorPos();
   // 一時的にカーソルは非表示
   DrawCursor(false);
 
-  while(*s) {
-    Print(*s);
-    ++s;
+  if (len) {
+    for (size_t i = 0; i < *len; ++i) {
+      Print(*s);
+      ++s;
+    }
+  } else {
+    // 引数に文字数の指定がなかった場合は、全文字数描画する。
+    while(*s) {
+      Print(*s);
+      ++s;
+    }
   }
 
   // 非表示にしたカーソルを再度表示
   DrawCursor(true);
+  const auto cursor_after = CalcCursorPos();
+
+  // 文字列のエリアを特定して再描画
+  Vector2D<int> draw_pos{ToplevelWindow::kTopLeftMargin.x, cursor_before.y};
+  Vector2D<int> draw_size{window_->InnerSize().x,
+                          cursor_after.y - cursor_before.y + 16};
+  
+  Rectangle<int> draw_area{draw_pos, draw_size};
+
+  Message msg = MakeLayerMessage(
+      task_id_, LayerID(), LayerOperation::DrawArea, draw_area);
+  __asm__("cli");  // 割込み禁止
+  task_manager->SendMessage(1, msg);
+  __asm__("sti");  // 割り込み許可
+  
 }
 
 /**
@@ -819,6 +847,12 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
   return MAKE_ERROR(Error::kSuccess);
 }
 
+/**
+ * @brief 
+ * タスクIDとターミナルインスタンスの対応表
+ * システムコールの呼び出し元タスクから表示するターミナルの特定などに使う
+ */
+std::map<uint64_t, Terminal*>* terminals;
 
 /**
  * @fn
@@ -832,11 +866,12 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
 void TaskTerminal(uint64_t task_id, int64_t data) {
   __asm__("cli"); // 割り込みを抑止
   Task& task = task_manager->CurrentTask();
-  Terminal* terminal = new Terminal;
+  Terminal* terminal = new Terminal{task_id};
   layer_manager->Move(terminal->LayerID(), {100, 200});
   active_layer->Activate(terminal->LayerID());
   // ターミナルタスクを検索表に登録する
   layer_task_map->insert(std::make_pair(terminal->LayerID(), task_id));
+  (*terminals)[task_id] = terminal;
   __asm__("sti"); // 割り込みを許可
 
   while (true) {

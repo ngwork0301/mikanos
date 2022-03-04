@@ -277,6 +277,8 @@ extern "C" void KernelMainNewStack(
   InitializeTask();
   Task& main_task = task_manager->CurrentTask();
 
+  // ターミナルとタスクのマッピングを初期化
+  terminals = new std::map<uint64_t, Terminal*>;
   // ターミナル用タスクを生成して起床させる
   const uint64_t task_terminal_id = task_manager->NewTask()
     .InitContext(TaskTerminal, 0)

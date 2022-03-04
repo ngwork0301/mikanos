@@ -1,5 +1,5 @@
 TARGET = rpn
-OBJS = rpn.o syscall.o
+OBJS = rpn.o syscall.o newlib_support.o
 
 CPPFLAGS += -I .
 CFLAGS   += -O2 -Wall -g --target=x86_64-elf -ffreestanding -mcmodel=large
@@ -15,6 +15,9 @@ $(TARGET): $(OBJS) Makefile
 
 %.o: %.cpp Makefile
 	clang++ $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+%.o: %.c Makefile
+	clang $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 %.o: %.asm Makefile
 	nasm -f elf64 -o $@ $<

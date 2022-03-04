@@ -7,6 +7,7 @@
 
 #include <deque>
 #include <map>
+#include <optional>
 #include "fat.hpp"
 #include "window.hpp"
 #include "task.hpp"
@@ -17,16 +18,19 @@ class Terminal {
     static const int kRows = 15, kColumns = 60;
     static const int kLineMax = 128;
 
-    Terminal();
+    Terminal(uint64_t task_id);
     unsigned int LayerID() const { return layer_id_; }
     Rectangle<int> BlinkCursor();
     Rectangle<int> InputKey(uint8_t modifier, uint8_t keycode, char ascii);
+    void Print(const char* s, std::optional<size_t> len = std::nullopt);
 
   private:
     //! このターミナルウィンドウのインスタンス
     std::shared_ptr<ToplevelWindow> window_;
     //! ターミナルウィンドウのレイヤーID
     unsigned int layer_id_;
+    //! このターミナルのタスクID
+    uint64_t task_id_;
 
     //! カーソル座標
     Vector2D<int> cursor_{0, 0};
@@ -41,7 +45,6 @@ class Terminal {
     std::array<char, kLineMax> linebuf_{};
     void Scroll1();
     void Print(char c);
-    void Print(const char* s);
     void ExecuteLine();
     Error ExecuteFile(const fat::DirectoryEntry& file_entry, char* command, char* first_arg);
 
@@ -52,4 +55,5 @@ class Terminal {
     Rectangle<int> HistoryUpDown(int direction);
 };
 
+extern std::map<uint64_t, Terminal*>* terminals;
 void TaskTerminal(uint64_t task_id, int64_t data);
