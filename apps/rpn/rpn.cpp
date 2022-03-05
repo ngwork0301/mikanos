@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstdio>
+#include "../syscall.h"
 #include "../../kernel/logger.hpp"
 
 // OSの関数ポインタを取得
@@ -38,9 +39,6 @@ void Push(long value) {
     ++stack_ptr;
     stack[stack_ptr] = value;
 }
-
-extern "C" void SyscallExit(int exit_code);
-// extern "C" void SyscallLogString(const int log_level, const char* s);
 
 /**
  * @fn
