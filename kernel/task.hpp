@@ -48,6 +48,7 @@ class Task {
     Task(uint64_t id);
     Task& InitContext(TaskFunc* f, int64_t data);
     TaskContext& Context();
+    uint64_t& OSStackPointer();
 
     uint64_t ID() const;
     Task& Sleep();
@@ -65,6 +66,8 @@ class Task {
     std::vector<uint64_t> stack_;
     //! コンテキスト構造体
     alignas(16) TaskContext context_;
+    //! ユーザアプリ呼び出し時のOS側への復帰用のOSスタック領域
+    uint64_t os_stack_ptr_;
     //! このタスクのコンテキスト内でつかうイベントキュー
     std::deque<Message> msgs_;
     //! このタスクの現在のレベル

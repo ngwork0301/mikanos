@@ -93,6 +93,15 @@ TaskContext& Task::Context() {
 }
 
 /**
+ * @brief 
+ * ユーザーアプリ呼び出し時のOS復帰用スタックポインタを返す
+ * @return uint64_t& ユーザーアプリ呼び出し時のOS復帰用スタックポインタ
+ */
+uint64_t& Task::OSStackPointer() {
+  return os_stack_ptr_;
+}
+
+/**
  * @fn
  * Task::IDメソッド
  * 

@@ -63,13 +63,22 @@ SetCSSS:
     ret
 
 global CallApp
-CallApp:  ; void CallApp(int argc, char** argv, uint16_t cs, uint16_t ss, uint64_t rip, uint64_t rsp);
+CallApp:  ; int CallApp(int argc, char** argv, uint16_t ss,
+          ;              uint64_t rip, uint64_t rsp, uint64_t* os_stack_ptr);
+    ; 復帰のために、レジスタの値をスタック領域に保存
+    push rbx
     push rbp
-    mov rbp, rsp
-    push rcx    ; SS
-    push r9     ; RSP
+    push r12
+    push r13
+    push r14
+    push r15
+    mov [r9], rsp  ; OS用のスタックポインタを保存 r9は第6引数
+
+    push rdx    ; SS
+    push r8     ; RSP
+    add rdx, 8  ; gdtの定義上でSS+1した値をCSに使う
     push rdx    ; CS
-    push r8     ; RIP
+    push rcx     ; RIP
     o64 retf
     ; アプリケーションが終了してもここには来ない
 
@@ -264,9 +273,10 @@ WriteMSR:   ; void WriteMSR(uint32_t msr, uint64_t value);
 extern syscall_table
 global SyscallEntry
 SyscallEntry:   ; void SyscallEntry(void);
-    push rbp;
+    push rbp
     push rcx    ; original RIP
     push r11    ; original RFLAGS
+    push rax    ; システムコール番号を保存
 
     mov rcx, r10    ; システムコール呼び出しアプリ側でR10に入れた引数をRCXに戻す
     and eax, 0x7fffffff
@@ -279,7 +289,24 @@ SyscallEntry:   ; void SyscallEntry(void);
 
     mov rsp, rbp
 
+    pop rsi   ; システムコール番号を復帰
+    cmp esi, 0x80000002
+    je  .exit
+
     pop r11
     pop rcx
     pop rbp
     o64 sysret
+
+.exit:     ;アプリを終了させてOSにもどる
+    mov rsp, rax    ; CallAppで保存したスタック領域を戻す
+    mov eax, edx    ; RDXに入っているarg1=終了コードを戻り値としてRAXに入れる。
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+
+    ret   ; CallApp の次の行に飛ぶ

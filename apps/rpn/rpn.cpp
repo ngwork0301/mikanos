@@ -39,7 +39,8 @@ void Push(long value) {
     stack[stack_ptr] = value;
 }
 
-extern "C" int64_t SyscallLogString(LogLevel, const char*);
+extern "C" void SyscallExit(int exit_code);
+// extern "C" void SyscallLogString(const int log_level, const char* s);
 
 /**
  * @fn
@@ -47,7 +48,7 @@ extern "C" int64_t SyscallLogString(LogLevel, const char*);
  * @brief 
  * 逆ポーランド記法で演算をおこない、その数値を返す
  */
-extern "C" int main(int argc, char** argv) {
+extern "C" void main(int argc, char** argv) {
     stack_ptr = -1;
 
     // 引数の数だけループ
@@ -57,18 +58,18 @@ extern "C" int main(int argc, char** argv) {
             long a = Pop();
             Push(a + b);
             // printk("[%d] <- %ld\n", stack_ptr, a + b);
-            SyscallLogString(kWarn, "+");
+            // SyscallLogString(kWarn, "+");
         } else if(strcmp(argv[i], "-") == 0) {
             long b = Pop();
             long a = Pop();
             Push(a - b);
             // printk("[%d] <- %ld\n", stack_ptr, a - b);
-            SyscallLogString(kWarn, "-");
+            // SyscallLogString(kWarn, "-");
         } else {
             long a = atol(argv[i]);
             Push(a);
             // printk("[%d] <- %ld\n", stack_ptr, a);
-            SyscallLogString(kWarn, "#");
+            // SyscallLogString(kWarn, "#");
         }
     }
 
@@ -76,9 +77,10 @@ extern "C" int main(int argc, char** argv) {
     // fill_rect(*scrn_writer, Vector2D<int>{100, 10}, Vector2D<int>{200, 200}, ToColor(0x00ff00));
 
     if (stack_ptr < 0) {
-        return 0;
+        // エラーなので、-1もおかしいがひとまず
+        SyscallExit(static_cast<int>(-1));
     }
-    SyscallLogString(kWarn, "\nhello, this is rpn\n");
+    // SyscallLogString(kWarn, "\nhello, this is rpn\n");
 
     // 試しにlong型の変数をprintfする
     long result = 0;
@@ -86,8 +88,5 @@ extern "C" int main(int argc, char** argv) {
         result = Pop();
     }
     printf("%ld\n", result);
-
-    // far returnできないので、無限ループしておく
-    while (1);
-    // return static_cast<int>(Pop());
+    SyscallExit(static_cast<int>(result));
 }

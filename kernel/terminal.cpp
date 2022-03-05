@@ -827,16 +827,19 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
     return err;
   }
 
+  __asm__("cli");  // 割り込みを禁止
+  auto& task = task_manager->CurrentTask();
+  __asm__("sti");  // 割り込みを許可
+
   auto entry_addr = elf_header->e_entry;
   // CS/SSレジスタを切り替えて、ユーザセグメントとして実行
-  CallApp(argc.value, argv, 4 << 3 | 3, 3 << 3 | 3, entry_addr,
-      stack_frame_addr.value + 4096 - 8);
+  int ret = CallApp(argc.value, argv, 3 << 3 | 3, entry_addr,
+      stack_frame_addr.value + 4096 - 8,
+      &task.OSStackPointer());
 
-  /*
   char s[64];
   sprintf(s, "app exited. ret = %d\n", ret);
   Print(s);
-  */
 
   // マッピングした階層ページング構造を解放する
   const auto addr_first = GetFirstLoadAddress(elf_header);
