@@ -63,16 +63,35 @@ namespace syscall {
     return { task.OSStackPointer(), static_cast<int>(arg1) };
   }
 
+  SYSCALL(OpenWindow) {
+    const int w = arg1, h = arg2, x = arg3, y = arg4;
+    const auto title = reinterpret_cast<const char*>(arg5);
+    const auto win = std::make_shared<ToplevelWindow>(
+        w, h, screen_config.pixel_format, title);
+    
+    __asm__("cli"); // 割り込み禁止
+    const auto layer_id = layer_manager->NewLayer()
+      .SetWindow(win)
+      .SetDraggable(true)
+      .Move({x, y})
+      .ID();
+    active_layer->Activate(layer_id);
+    __asm__("sti"); // 割り込み許可
+
+    return { layer_id, 0 };
+  }
+
 #undef SYSCALL
 
 }  // namespace syscall
 
 using SyscallFuncType = syscall::Result (uint64_t, uint64_t, uint64_t,
                                  uint64_t, uint64_t, uint64_t);
-extern "C" std::array<SyscallFuncType*, 3> syscall_table{
+extern "C" std::array<SyscallFuncType*, 4> syscall_table{
   /* 0x00 */ syscall::LogString,
   /* 0x01 */ syscall::PutString,
   /* 0x02 */ syscall::Exit,
+  /* 0x03 */ syscall::OpenWindow,
 };
 
 void InitializeSyscall() {
