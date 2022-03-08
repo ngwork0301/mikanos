@@ -2,8 +2,18 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-void _exit(void) {
-  while (1) __asm__("hlt");
+#include "syscall.h"
+
+/**
+ * @fn
+ * _exit関数
+ * 
+ * @brief 
+ * プログラムを就床する
+ * @param [in] status 終了コード
+ */
+void _exit(int status) {
+  SyscallExit(status);
 }
 
 //! プログラムブレークと、その上限値を示すグローバル変数
@@ -47,26 +57,6 @@ ssize_t read(int fd, void* buf, size_t count) {
 }
 
 /**
- * @struct
- * SyscallResult構造体
- * @brief 
- * カーネル側に呼び出したシステムコールの戻り値構造体
- */
-struct SyscallResult {
-  uint64_t value;
-  int error;
-};
-
-/**
- * @fn
- * SyscallPutString関数
- * @brief 
- * システムコール。アセンブリ実装
- * @return struct SyscallResult 
- */
-struct SyscallResult SyscallPutString(uint64_t, uint64_t, uint64_t);
-
-/**
  * @fn
  * write関数
  * @brief 
@@ -77,7 +67,7 @@ struct SyscallResult SyscallPutString(uint64_t, uint64_t, uint64_t);
  * @return ssize_t 
  */
 ssize_t write(int fd, const void* buf, size_t count) {
-  struct SyscallResult res = SyscallPutString(fd, (uint64_t)buf, count);
+  struct SyscallResult res = SyscallPutString(fd, buf, count);
   if (res.error == 0) {
     return res.value;
   }
