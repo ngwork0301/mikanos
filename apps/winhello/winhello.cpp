@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "../syscall.h"
 
 extern "C" void main(int argc, char** argv) {

@@ -12,6 +12,13 @@
 #include "terminal.hpp"
 
 namespace syscall {
+  /**
+   * @struct
+   * Result構造体
+   * @brief 
+   * value 結果
+   * error エラーコード
+   */
   struct Result {
     uint64_t value;
     int error;
@@ -22,6 +29,15 @@ namespace syscall {
     uint64_t arg1, uint64_t arg2, uint64_t arg3, \
     uint64_t arg4, uint64_t arg5, uint64_t arg6)
 
+  /**
+   * @fn
+   * syscall::LogString関数
+   * @brief
+   * Log関数を呼び出して文字を描画する。
+   * @param [in] arg1 ログレベル
+   * @param [in] arg2 描画する文字列
+   * @return Result{ 描画した文字数, エラーコード }
+   */
   SYSCALL(LogString) {
     if (arg1 != kError && arg1 != kWarn && arg1 != kInfo && arg1 != kDebug) {
       // 出力レベルフラグ以外が引数に指定された時はエラー
@@ -37,6 +53,16 @@ namespace syscall {
     return { len, 0 };
   }
 
+  /**
+   * @fn
+   * syscall::PutString関数
+   * @brief
+   * ターミナルに文字を描画する。
+   * @param [in] arg1 出力先ターミナルの番号
+   * @param [in] arg2 表示したい文字列
+   * @param [in] arg3 NUL文字をふくまないバイト数
+   * @return Result{ 描画した文字数, エラーコード }
+   */
   SYSCALL(PutString) {
     //! 第一引数：現状は、出力先ターミナルの番号
     const auto fd = arg1;
@@ -57,6 +83,13 @@ namespace syscall {
     return { 0, EBADF };
   }
 
+  /**
+   * @fn
+   * syscall::Exit関数
+   * @brief 
+   * 呼び出し側のアプリを終了する。
+   * @return Result{ アプリを呼び出し前のOSのスタック領域のポインタ, エラーコード }
+   */
   SYSCALL(Exit) {
     __asm__("cli"); // 割り込み禁止
     auto& task = task_manager->CurrentTask();
@@ -64,6 +97,17 @@ namespace syscall {
     return { task.OSStackPointer(), static_cast<int>(arg1) };
   }
 
+  /**
+   * @fn
+   * syscall::OpenWindow関数
+   * @brief 
+   * ウィンドウを開く
+   * @param [in] arg1 描画するウィンドウの幅
+   * @param [in] arg2 描画するウィンドウの高さ
+   * @param [in] arg3 描画するウィンドウの左上の位置(x座標)
+   * @param [in] arg4 描画するウィンドウの左上の位置(y座標)
+   * @return Result{ レイヤーID, エラーコード }
+   */
   SYSCALL(OpenWindow) {
     const int w = arg1, h = arg2, x = arg3, y = arg4;
     const auto title = reinterpret_cast<const char*>(arg5);
@@ -82,25 +126,82 @@ namespace syscall {
     return { layer_id, 0 };
   }
 
-  SYSCALL(WinWriteString) {
-    const unsigned int layer_id = arg1;
-    const int x = arg2, y = arg3;
-    const uint32_t color = arg4;
-    const auto s = reinterpret_cast<const char*>(arg5);
+  namespace {
+    /**
+     * @fn
+     * DoWinFunc関数テンプレート
+     * @brief 
+     * ユーザアプリが作成したウィンドウへの描画の共通処理
+     * @tparam Func 中身を描画する関数
+     * @tparam Args システムコールの引数（可変引数テンプレート）
+     * @param f 中身を描画する関数
+     * @param layer_id 描画するウィンドウのレイヤーID
+     * @param args 残りの第3引数以降の引数
+     * @return Result { 0, エラーコード } または、fの戻り値
+     */
+    template <class Func, class... Args>
+    Result DoWinFunc(Func f, unsigned int layer_id, Args... args) {
+      __asm__("cli"); // 割り込み禁止
+      auto layer = layer_manager->FindLayer(layer_id);
+      __asm__("sti"); // 割り込み許可
+      if (layer == nullptr) {
+        return { 0, EBADF};
+      }
 
-    __asm__("cli"); // 割り込み禁止
-    auto layer = layer_manager->FindLayer(layer_id);
-    __asm__("sti"); // 割り込み許可
-    if (layer == nullptr) {
-      return { 0, EBADF};
+      // 第一引数に指定された関数の呼び出し
+      const auto res = f(*layer->GetWindow(), args...);
+      if (res.error) {
+        return res;
+      }
+      __asm__("cli");  // 割り込み禁止
+      layer_manager->Draw(layer_id);
+      __asm__("sti");  // 割り込み許可
+
+      return res;
     }
+  }
 
-    WriteString(*layer->GetWindow()->Writer(), {x, y}, s, ToColor(color));
-    __asm__("cli");  // 割り込み禁止
-    layer_manager->Draw(layer_id);
-    __asm__("sti");  // 割り込み許可
+  /**
+   * @fn
+   * syscall::WinWriteRectangle関数
+   * @brief
+   * 指定されたウィンドウに文字を描く
+   * @param [in] arg1 レイヤーID
+   * @param [in] arg2 描画する文字の左上の位置(x座標)
+   * @param [in] arg3 描画する文字の左上の位置(y座標)
+   * @param [in] arg4 描画する文字列
+   * @param [in] arg5 色
+   * @return Result { 0, エラーコード }
+   */
+  SYSCALL(WinWriteString) {
+    return DoWinFunc(
+        [](Window& win,
+           int x, int y, uint32_t color, const char* s) {
+             WriteString(*win.Writer(), {x, y}, s, ToColor(color));
+             return Result{ 0, 0 };
+           }, arg1, arg2, arg3, arg4, reinterpret_cast<const char *>(arg5));
+  }
 
-    return { 0, 0 };
+  /**
+   * @fn
+   * syscall::WinWriteRectangle関数
+   * @brief
+   * 指定されたウィンドウに長方形を描く
+   * @param [in] arg1 レイヤーID
+   * @param [in] arg2 長方形の左上の描画位置(x座標)
+   * @param [in] arg3 長方形の左上の描画位置(y座標)
+   * @param [in] arg4 長方形の幅
+   * @param [in] arg5 長方形の高さ
+   * @param [in] arg6 長方形の色
+   * @return Result { 0, エラーコード }
+   */
+  SYSCALL(WinWriteRectangle) {
+    return DoWinFunc(
+        [](Window& win,
+           int x, int y, int w, int h, uint32_t color) {
+             FillRectangle(*win.Writer(), {x, y}, {w, h}, ToColor(color));
+             return Result{ 0, 0 };
+           }, arg1, arg2, arg3 ,arg4, arg5 , arg6);
   }
 
 #undef SYSCALL
@@ -109,12 +210,13 @@ namespace syscall {
 
 using SyscallFuncType = syscall::Result (uint64_t, uint64_t, uint64_t,
                                  uint64_t, uint64_t, uint64_t);
-extern "C" std::array<SyscallFuncType*, 5> syscall_table{
+extern "C" std::array<SyscallFuncType*, 6> syscall_table{
   /* 0x00 */ syscall::LogString,
   /* 0x01 */ syscall::PutString,
   /* 0x02 */ syscall::Exit,
   /* 0x03 */ syscall::OpenWindow,
   /* 0x04 */ syscall::WinWriteString,
+  /* 0x05 */ syscall::WinWriteRectangle,
 };
 
 void InitializeSyscall() {
