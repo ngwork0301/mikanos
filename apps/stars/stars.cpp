@@ -22,6 +22,8 @@ extern "C" void main(int argc, char** argv) {
     num_stars = atoi(argv[1]);
   }
 
+  // 描画前の時刻を取得
+  auto [tick_start, timer_freq] = SyscallGetCurrentTick();
   // 乱数を生成
   std::default_random_engine rand_engine;
   // 乱数の生成範囲を設定
@@ -33,5 +35,10 @@ extern "C" void main(int argc, char** argv) {
     SyscallWinFillRectangle(layer_id, 4 + x, 24 + y, 2, 2, 0xfff100);
   }
 
+  // 描画後の時刻との差から描画にかかった時間を算出して表示
+  auto tick_end = SyscallGetCurrentTick();
+  printf("%d stars in %lu ms \n",
+        num_stars,
+        (tick_end.value - tick_start) * 10000 / timer_freq);
   exit(0);
 }
