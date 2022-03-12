@@ -151,7 +151,10 @@ namespace syscall {
      * @return Result { 0, エラーコード } または、fの戻り値
      */
     template <class Func, class... Args>
-    Result DoWinFunc(Func f, unsigned int layer_id, Args... args) {
+    Result DoWinFunc(Func f, uint64_t layer_id_flags, Args... args) {
+      const uint32_t layer_flags = layer_id_flags >> 32;
+      const unsigned int layer_id = layer_id_flags & 0xffffffff;
+
       __asm__("cli"); // 割り込み禁止
       auto layer = layer_manager->FindLayer(layer_id);
       __asm__("sti"); // 割り込み許可
@@ -164,9 +167,13 @@ namespace syscall {
       if (res.error) {
         return res;
       }
-      __asm__("cli");  // 割り込み禁止
-      layer_manager->Draw(layer_id);
-      __asm__("sti");  // 割り込み許可
+
+      // 再描画しないオプション(最下位ビット0)がfalseの場合は、再描画する。
+      if ((layer_flags & 1) == 0) {
+        __asm__("cli");  // 割り込み禁止
+        layer_manager->Draw(layer_id);
+        __asm__("sti");  // 割り込み許可
+      }
 
       return res;
     }
@@ -215,13 +222,27 @@ namespace syscall {
            }, arg1, arg2, arg3 ,arg4, arg5 , arg6);
   }
 
+  /**
+   * @fn
+   * syscall::WinRedraw関数
+   * @brief 
+   * ウィンドウを再描画する。
+   * @param [in] arg1 layer_id_flags レイヤーIDと再描画しないフラグ
+   */
+  SYSCALL(WinRedraw) {
+    return DoWinFunc(
+      [](Window&) {
+        return Result{ 0, 0 };
+      }, arg1);
+  }
+
 #undef SYSCALL
 
 }  // namespace syscall
 
 using SyscallFuncType = syscall::Result (uint64_t, uint64_t, uint64_t,
                                  uint64_t, uint64_t, uint64_t);
-extern "C" std::array<SyscallFuncType*, 7> syscall_table{
+extern "C" std::array<SyscallFuncType*, 8> syscall_table{
   /* 0x00 */ syscall::LogString,
   /* 0x01 */ syscall::PutString,
   /* 0x02 */ syscall::Exit,
@@ -229,6 +250,7 @@ extern "C" std::array<SyscallFuncType*, 7> syscall_table{
   /* 0x04 */ syscall::WinWriteString,
   /* 0x05 */ syscall::WinWriteRectangle,
   /* 0x06 */ syscall::GetCurrentTick,
+  /* 0x07 */ syscall::WinRedraw,
 };
 
 void InitializeSyscall() {

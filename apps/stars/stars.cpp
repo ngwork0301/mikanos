@@ -31,9 +31,12 @@ extern "C" void main(int argc, char** argv) {
   for (int i = 0; i < num_stars; ++i) {
     int x = x_dist(rand_engine);
     int y = x_dist(rand_engine);
-    // 2 x 2 の点をランダムに生成
-    SyscallWinFillRectangle(layer_id, 4 + x, 24 + y, 2, 2, 0xfff100);
+    // 2 x 2 の点をランダムに生成(速度改善のため、再描画しない)
+    SyscallWinFillRectangle(layer_id | LAYER_NO_REDRAW,
+                             4 + x, 24 + y, 2, 2, 0xfff100);
   }
+  // 点を描画しおわったら再描画する。
+  SyscallWinRedraw(layer_id);
 
   // 描画後の時刻との差から描画にかかった時間を算出して表示
   auto tick_end = SyscallGetCurrentTick();
