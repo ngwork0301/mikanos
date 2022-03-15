@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <cerrno>
+#include <cmath>
 
 #include "asmfunc.h"
 #include "font.hpp"
@@ -236,13 +237,80 @@ namespace syscall {
       }, arg1);
   }
 
+  /**
+   * @fn
+   * syscall::WinDrawLine関数
+   * @brief
+   * 線を描画する
+   * @param [in] arg1 レイヤーID
+   * @param [in] arg1 開始点のx座標
+   * @param [in] arg2 開始点のy座標
+   * @param [in] arg3 終了点のx座標
+   * @param [in] arg4 終了点のy座標
+   * @param [in] arg5 色
+   * @return Result { 0, エラーコード }
+   */
+  SYSCALL(WinDrawLine) {
+    return DoWinFunc(
+      [](Window& win,
+         int x0, int y0, int x1, int y1, uint32_t color) {
+      // 傾きが0より大きいなら1、0より小さいなら-1を判定するラムダ式
+      auto sign = [](int x) {
+        return (x > 0) ? 1 : (x < 0) ? -1 : 0;
+      };
+      const int dx = x1 - x0 + sign(x1 - x0);
+      const int dy = y1 - y0 + sign(y1 - y0);
+
+      // 差が0の場合は、点のみ描画。分母が0にならないように、処理しておく。
+      if (dx == 0 && dy == 0) {
+        win.Writer()->Write({x0, y0}, ToColor(color));
+        return Result{ 0, 0 };
+      }
+
+      const auto floord = static_cast<double(*)(double)>(floor);
+      const auto ceild = static_cast<double(*)(double)>(ceil);
+      // 水平距離のほうが垂直距離より長い場合
+      if (abs(dx) >= abs(dy)) {
+        // マイナス方向の場合は、入れ替え
+        if (dx < 0) {
+          std::swap(x0, x1);
+          std::swap(y0, y1);
+        }
+        //! y1のほうが大きければ繰り上げ or y0のほうが大きければ切り捨て
+        const auto roundish = y1 >= y0 ? floord : ceild;
+        //! 傾き
+        const double m = static_cast<double>(dy) / dx;
+        for (int x = x0; x <= x1; ++x) {
+          const int y = roundish(m * (x - x0) + y0);
+          win.Writer()->Write({x, y}, ToColor(color));
+        }
+      } else {
+        // 垂直距離のほうが、水平距離より長い場合
+        if (dy < 0) {
+          // 舞なる方向音場合は、入れ替え
+          std::swap(x0, x1);
+          std::swap(y0, y1);
+        }
+        //! x1のほうが大きければ繰り上げ or x0のほうが大きければ切り捨て
+        const auto roundish = x1 < x0 ? floord : ceild;
+        //! 傾き
+        const double m = static_cast<double>(dx) / dy;
+        for (int y = y0; y <= y1; ++y) {
+          const int x = roundish(m * (y - y0) + x0);
+          win.Writer()->Write({x, y}, ToColor(color));
+        }
+      }
+      return Result{ 0, 0 };
+    }, arg1, arg2, arg3, arg4, arg5, arg6);
+  }
+
 #undef SYSCALL
 
 }  // namespace syscall
 
 using SyscallFuncType = syscall::Result (uint64_t, uint64_t, uint64_t,
                                  uint64_t, uint64_t, uint64_t);
-extern "C" std::array<SyscallFuncType*, 8> syscall_table{
+extern "C" std::array<SyscallFuncType*, 9> syscall_table{
   /* 0x00 */ syscall::LogString,
   /* 0x01 */ syscall::PutString,
   /* 0x02 */ syscall::Exit,
@@ -251,6 +319,7 @@ extern "C" std::array<SyscallFuncType*, 8> syscall_table{
   /* 0x05 */ syscall::WinWriteRectangle,
   /* 0x06 */ syscall::GetCurrentTick,
   /* 0x07 */ syscall::WinRedraw,
+  /* 0x08 */ syscall::WinDrawLine,
 };
 
 void InitializeSyscall() {
