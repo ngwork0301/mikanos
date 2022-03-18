@@ -138,6 +138,38 @@ namespace syscall {
     return { timer_manager->CurrentTick(), kTimerFreq };
   }
 
+  /**
+   * @fn
+   * syscall::CloseWindow関数
+   * @brief
+   * 引数で指定したレイヤーを削除する
+   * @param [in] arg1 描画するウィンドウのレイヤーID + フラグ(再描画有無)
+   */
+  SYSCALL(CloseWindow) {
+    // 下位32ビットからlayer_idを取り出し。
+    const unsigned int layer_id = arg1 & 0xffffffff;
+    const auto layer = layer_manager->FindLayer(layer_id);
+
+    // 指定されたレイヤーがない場合はエラー
+    if (layer == nullptr) {
+      return { EBADF, 0 };
+    }
+
+    // 再描画のため、削除するレイヤーの位置を調べる
+    const auto layer_pos = layer->GetPosition();
+    const auto win_size = layer->GetWindow()->Size();
+
+    __asm__("cli");   // 割り込み禁止
+    // 再描画のため、最下位のレイヤーをActivateする
+    active_layer->Activate(0);
+    layer_manager->RemoveLayer(layer_id);
+    // 消えた領域を再描画する。
+    layer_manager->Draw({layer_pos, win_size});
+    __asm__("sti");   // 割り込み許可
+
+    return { 0, 0 };
+  }
+
   namespace {
     /**
      * @fn
@@ -147,7 +179,7 @@ namespace syscall {
      * @tparam Func 中身を描画する関数
      * @tparam Args システムコールの引数（可変引数テンプレート）
      * @param f 中身を描画する関数
-     * @param layer_id 描画するウィンドウのレイヤーID
+     * @param layer_id_flags 描画するウィンドウのレイヤーID + フラグ(再描画有無)
      * @param args 残りの第3引数以降の引数
      * @return Result { 0, エラーコード } または、fの戻り値
      */
@@ -185,7 +217,7 @@ namespace syscall {
    * syscall::WinWriteRectangle関数
    * @brief
    * 指定されたウィンドウに文字を描く
-   * @param [in] arg1 レイヤーID
+   * @param [in] arg1 ウィンドウインスタンス
    * @param [in] arg2 描画する文字の左上の位置(x座標)
    * @param [in] arg3 描画する文字の左上の位置(y座標)
    * @param [in] arg4 描画する文字列
@@ -206,7 +238,7 @@ namespace syscall {
    * syscall::WinWriteRectangle関数
    * @brief
    * 指定されたウィンドウに長方形を描く
-   * @param [in] arg1 レイヤーID
+   * @param [in] arg1 ウィンドウインスタンス
    * @param [in] arg2 長方形の左上の描画位置(x座標)
    * @param [in] arg3 長方形の左上の描画位置(y座標)
    * @param [in] arg4 長方形の幅
@@ -228,7 +260,7 @@ namespace syscall {
    * syscall::WinRedraw関数
    * @brief 
    * ウィンドウを再描画する。
-   * @param [in] arg1 layer_id_flags レイヤーIDと再描画しないフラグ
+   * @param [in] arg1 ウィンドウインスタンス
    */
   SYSCALL(WinRedraw) {
     return DoWinFunc(
@@ -242,7 +274,7 @@ namespace syscall {
    * syscall::WinDrawLine関数
    * @brief
    * 線を描画する
-   * @param [in] arg1 レイヤーID
+   * @param [in] arg1 ウィンドウインスタンス
    * @param [in] arg1 開始点のx座標
    * @param [in] arg2 開始点のy座標
    * @param [in] arg3 終了点のx座標
@@ -310,7 +342,7 @@ namespace syscall {
 
 using SyscallFuncType = syscall::Result (uint64_t, uint64_t, uint64_t,
                                  uint64_t, uint64_t, uint64_t);
-extern "C" std::array<SyscallFuncType*, 9> syscall_table{
+extern "C" std::array<SyscallFuncType*, 10> syscall_table{
   /* 0x00 */ syscall::LogString,
   /* 0x01 */ syscall::PutString,
   /* 0x02 */ syscall::Exit,
@@ -320,6 +352,7 @@ extern "C" std::array<SyscallFuncType*, 9> syscall_table{
   /* 0x06 */ syscall::GetCurrentTick,
   /* 0x07 */ syscall::WinRedraw,
   /* 0x08 */ syscall::WinDrawLine,
+  /* 0x09 */ syscall::CloseWindow,
 };
 
 void InitializeSyscall() {

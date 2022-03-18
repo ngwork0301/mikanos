@@ -5,6 +5,24 @@
 #include "timer.hpp"
 #include "logger.hpp"
 
+namespace {
+  /**
+   * @fn
+   * EraseIf関数
+   * @brief 
+   * 第一引数で指定されたリストの中から第２引数で指定された要素を探してあれば削除する。
+   * @tparam T リスト
+   * @tparam U 削除対象のインスタンス
+   * @param c リスト
+   * @param pred 削除対象のインスタンス
+   */
+  template <class T, class U>
+  void EraseIf(T& c, const U& pred) {
+    auto it = std::remove_if(c.begin(), c.end(), pred);
+    c.erase(it, c.end());
+  }
+} // namespace
+
 /**
  * @fn
  * Layerコンストラクタ
@@ -412,7 +430,24 @@ int LayerManager::GetHeight(unsigned int id){
   // 指定したレイヤーが見つからない場合
   return -1;
 }
- 
+
+/**
+ * @fn
+ * LayerManager::RemoveLayerメソッド
+ * @brief 
+ * 指定されたレイヤーを削除する
+ * @param id レイヤーID
+ */
+void LayerManager::RemoveLayer(unsigned int id) {
+  // layer_stack_から削除
+  Hide(id);
+
+  // 指定されたIDが存在するかどうかを調べるラムダ式
+  auto pred = [id](const std::unique_ptr<Layer>& elem) {
+    return elem->ID() == id;
+  };
+  EraseIf(layers_, pred);
+}
 
 /**
  * @fn ActiveLayer::ActiveLayerコンストラクタ

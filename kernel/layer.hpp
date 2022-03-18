@@ -77,6 +77,8 @@ class LayerManager {
     Layer* FindLayer(unsigned int id);
     int GetHeight(unsigned int id);
 
+    void RemoveLayer(unsigned int id);
+
   private:
     //! フレームバッファ
     FrameBuffer* screen_{nullptr};
