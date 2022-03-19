@@ -270,6 +270,7 @@ WriteMSR:   ; void WriteMSR(uint32_t msr, uint64_t value);
     wrmsr          ; ECXで指定されたレジスタへEDX:EAXの64ビット値を書き込む
     ret
 
+extern GetCurrentTaskOSStackPointer
 extern syscall_table
 global SyscallEntry
 SyscallEntry:   ; void SyscallEntry(void);
@@ -281,7 +282,23 @@ SyscallEntry:   ; void SyscallEntry(void);
     mov rcx, r10    ; システムコール呼び出しアプリ側でR10に入れた引数をRCXに戻す
     and eax, 0x7fffffff
     mov rbp, rsp
+
+    ; システムコールをOS用スタックで実行するための準備
     and rsp, 0xfffffffffffffff0  ; ABI上、関数のスタックポインタは、16の倍数である必要があるので下位4ビットを調整
+    push rax   ; GetCurrentTaskOSStackPointerで書き換えられないように退避
+    push rdx   ; GetCurrentTaskOSStackPointerで書き換えられないように退避
+    cli    ; 割り込み禁止
+    call GetCurrentTaskOSStackPointer
+    sti    ; 割り込み許可
+    mov rdx, [rsp + 0]   ; syscall時のRDX を OS用スタックにコピー
+    mov [rax - 16], rdx  
+    mov rdx, [rsp + 8]   ; syscall時のRAX を OS用スタックにコピー
+    mov [rax - 8], rdx
+
+    lea rsp, [rax - 16]  ; RSPをOSスタック領域に切り替え
+    pop rdx
+    pop rax
+    and rsp, 0xfffffffffffffff0
 
     call [syscall_table + 8 * eax]
     ; rbx, r12-r15 は callee-saved なので呼び出し側で保存しない

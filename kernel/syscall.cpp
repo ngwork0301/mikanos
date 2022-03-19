@@ -5,8 +5,10 @@
 #include <cerrno>
 #include <cmath>
 
+#include "app_event.hpp"
 #include "asmfunc.h"
 #include "font.hpp"
+#include "keyboard.hpp"
 #include "logger.hpp"
 #include "msr.hpp"
 #include "task.hpp"
@@ -123,6 +125,10 @@ namespace syscall {
       .Move({x, y})
       .ID();
     active_layer->Activate(layer_id);
+
+    // 開いたウィンドウをlayer_task_mapに追加
+    const auto task_id = task_manager->CurrentTask().ID();
+    layer_task_map->insert(std::make_pair(layer_id, task_id));
     __asm__("sti"); // 割り込み許可
 
     return { layer_id, 0 };
@@ -165,9 +171,64 @@ namespace syscall {
     layer_manager->RemoveLayer(layer_id);
     // 消えた領域を再描画する。
     layer_manager->Draw({layer_pos, win_size});
+    // 消したウィンドウをlayer_task_mapから削除
+    layer_task_map->erase(layer_id);
     __asm__("sti");   // 割り込み許可
 
     return { 0, 0 };
+  }
+
+  /**
+   * @fn
+   * syscall::ReadEvent関数
+   * @brief 
+   * アプリへのキー入力をターミナルタスクから受け取る
+   * @param [out] arg1 AppEvent。受け取ったイベントを入れる構造体
+   * @param [in] arg2 受け取るイベントのサイズ
+   * @return Result{ 受け取ったイベント数, エラーコード }
+   */
+  SYSCALL(ReadEvent) {
+    if (arg1 < 0x8000'0000'0000'0000) {
+      // 第一引数のAppEventのメモリ領域がユーザ用の後半アドレスになっていない場合は、エラー
+      return { 0, EFAULT };
+    }
+    const auto app_events = reinterpret_cast<AppEvent*>(arg1);
+    const size_t len = arg2;
+
+    __asm__("cli"); // 割込み禁止
+    auto& task = task_manager->CurrentTask();
+    __asm__("sti"); // 割り込み許可
+    size_t i = 0;
+
+    while(i < len) {
+      __asm__("cli"); // 割り込み禁止
+      auto msg = task.ReceiveMessage();
+      if (!msg && i == 0) {
+        // メッセージが空かつまだイベントを一つも受け取っていない場合は、継続して待つ
+        task.Sleep();
+        continue;
+      }
+      __asm__("sti"); // 割り込み許可
+
+      if (!msg) {
+        // メッセージが1つ以上あって、2つめ以降が空なら、そこまでのイベントを送る
+        break;
+      }
+      switch (msg->type) {
+        case Message::kKeyPush:
+          if (msg->arg.keyboard.keycode == 20 /* Q Key */ &&
+              msg->arg.keyboard.modifier && (kLControlBitMask | kRControlBitMask)) {
+            // 受け取ったイベントをAppEventに変換
+            app_events[i].type = AppEvent::kQuit;
+            ++i;
+          }
+          break;
+        default:
+          Log(kInfo, "uncaught event type: %u\n", msg->type);
+      }
+    }
+
+    return { i, 0};
   }
 
   namespace {
@@ -342,7 +403,7 @@ namespace syscall {
 
 using SyscallFuncType = syscall::Result (uint64_t, uint64_t, uint64_t,
                                  uint64_t, uint64_t, uint64_t);
-extern "C" std::array<SyscallFuncType*, 10> syscall_table{
+extern "C" std::array<SyscallFuncType*, 11> syscall_table{
   /* 0x00 */ syscall::LogString,
   /* 0x01 */ syscall::PutString,
   /* 0x02 */ syscall::Exit,
@@ -353,6 +414,7 @@ extern "C" std::array<SyscallFuncType*, 10> syscall_table{
   /* 0x07 */ syscall::WinRedraw,
   /* 0x08 */ syscall::WinDrawLine,
   /* 0x09 */ syscall::CloseWindow,
+  /* 0x0a */ syscall::ReadEvent,
 };
 
 void InitializeSyscall() {

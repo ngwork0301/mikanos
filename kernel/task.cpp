@@ -466,3 +466,16 @@ void InitializeTask() {
       Timer{timer_manager->CurrentTick() + kTaskTimerPeriod, kTaskTimerValue});
   __asm__("sti");  // 割り込み許可
 }
+
+/**
+ * @fn
+ * GetCurrentTaskOSStackPointer関数
+ * @brief 
+ * OS用のスタック領域を取得する。
+ * ※asmfunc.asmで呼び出すのでマングリングされないようにする
+ * 
+ */
+__attribute__((no_caller_saved_registers))
+extern "C" uint64_t GetCurrentTaskOSStackPointer() {
+  return task_manager->CurrentTask().OSStackPointer();
+}
