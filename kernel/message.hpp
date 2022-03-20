@@ -32,6 +32,7 @@ struct Message {
     kKeyPush,
     kLayer,
     kLayerFinish,
+    kMouseMove,
   } type;
 
   //! kLayer, kLayerFinishでつかう送信元タスクのID
@@ -55,5 +56,14 @@ struct Message {
       int x, y;
       int w, h;
     } layer;
+
+    struct {
+      //! マウス座標
+      int x, y;
+      //! 直前の移動量
+      int dx, dy;
+      //! ボタン押下状況
+      uint8_t buttons;
+    } mouse_move;
   } arg;
 };

@@ -4,6 +4,7 @@
 #include <memory>
 #include "graphics.hpp"
 #include "layer.hpp"
+#include "task.hpp"
 #include "usb/classdriver/mouse.hpp"
 
 namespace {
@@ -76,6 +77,44 @@ void Mouse::SetPosition(Vector2D<int> position) {
 
 /**
  * @fn
+ * SendMouseMessage関数
+ * @brief 
+ * アクティブウィンドウにマウスイベントを送信する。
+ * @param newpos 移動先のマウス座標
+ * @param posdiff マウスの移動量
+ * @param buttons ボタン押下状況
+ */
+void SendMouseMessage(Vector2D<int> newpos, Vector2D<int> posdiff,
+                      uint8_t buttons) {
+  // アクティブレイヤーを取得
+  const auto act = active_layer->GetActive();
+  if (!act) {
+    return;
+  }
+  const auto layer = layer_manager->FindLayer(act);
+
+  // アクティブレイヤーに対応するタスクを取得
+  const auto task_it = layer_task_map->find(act);
+  if (task_it == layer_task_map->end()) {
+    return;
+  }
+
+  // 移動していれば
+  if (posdiff.x != 0 || posdiff.y != 0) {
+    const auto relpos = newpos - layer->GetPosition();
+    Message msg{Message::kMouseMove};
+    msg.arg.mouse_move.x = relpos.x;
+    msg.arg.mouse_move.y = relpos.y;
+    msg.arg.mouse_move.dx = posdiff.x;
+    msg.arg.mouse_move.dy = posdiff.y;
+    msg.arg.mouse_move.buttons = buttons;
+    task_manager->SendMessage(task_it->second, msg);
+  }
+
+}
+
+/**
+ * @fn
  * Mouse::OnInterruptメソッド
  * 
  * @brief
@@ -121,6 +160,11 @@ void Mouse::OnInterrupt(uint8_t buttons, int8_t displacement_x, int8_t displacem
   } else if (previous_left_pressed && !left_pressed) {
     // 既に左クリックしてあって、今回離したとき。移動対象のレイヤーをクリアする
     drag_layer_id_ = 0;
+  }
+  // マウス移動イベントを送る
+  if (drag_layer_id_ == 0) {
+    // ドラッグイベントではないときだけ。移動イベントを送る。
+    SendMouseMessage(newpos, posdiff, buttons);
   }
 
   // 再入時のために既存のボタン変数をいれておく。
