@@ -83,9 +83,10 @@ void Mouse::SetPosition(Vector2D<int> position) {
  * @param newpos 移動先のマウス座標
  * @param posdiff マウスの移動量
  * @param buttons ボタン押下状況
+ * @param previous_buttons 一つ前のマウスのボタン押下状態
  */
 void SendMouseMessage(Vector2D<int> newpos, Vector2D<int> posdiff,
-                      uint8_t buttons) {
+                      uint8_t buttons, uint8_t previous_buttons) {
   // アクティブレイヤーを取得
   const auto act = active_layer->GetActive();
   if (!act) {
@@ -99,9 +100,10 @@ void SendMouseMessage(Vector2D<int> newpos, Vector2D<int> posdiff,
     return;
   }
 
+  //! 相対移動量
+  const auto relpos = newpos - layer->GetPosition();
   // 移動していれば
   if (posdiff.x != 0 || posdiff.y != 0) {
-    const auto relpos = newpos - layer->GetPosition();
     Message msg{Message::kMouseMove};
     msg.arg.mouse_move.x = relpos.x;
     msg.arg.mouse_move.y = relpos.y;
@@ -109,6 +111,21 @@ void SendMouseMessage(Vector2D<int> newpos, Vector2D<int> posdiff,
     msg.arg.mouse_move.dy = posdiff.y;
     msg.arg.mouse_move.buttons = buttons;
     task_manager->SendMessage(task_it->second, msg);
+  }
+
+  // ボタンイベントの変化があれば
+  if (previous_buttons != buttons) {
+    // XOR演算で変化したビットのみを抽出
+    const auto diff = previous_buttons ^ buttons;
+    // 変化があったビット(ボタン)ごとにループして、イベントを送る
+    for (int i = 0; i < 8; ++i) {
+      Message msg{Message::kMouseButton};
+      msg.arg.mouse_button.x = relpos.x;
+      msg.arg.mouse_button.y = relpos.y;
+      msg.arg.mouse_button.press = (buttons >> i) & 1;
+      msg.arg.mouse_button.button = i;
+      task_manager->SendMessage(task_it->second, msg);
+    }
   }
 
 }
@@ -144,8 +161,12 @@ void Mouse::OnInterrupt(uint8_t buttons, int8_t displacement_x, int8_t displacem
     // 新たに左クリックされたとき、移動対象のレイヤーを取得
     auto layer = layer_manager->FindLayerByPosition(position_, layer_id_);
     if (layer && layer->IsDraggable()) {
-      // レイヤーが移動可能だったらdrag_layer_idをセット
-      drag_layer_id_ = layer->ID();
+      // クリックした領域がタイトルバーであるかを判定
+      const auto y_layer = position_.y - layer->GetPosition().y;
+      if (y_layer < ToplevelWindow::kTopLeftMargin.y) {
+        // レイヤーが移動可能だったらdrag_layer_idをセット
+        drag_layer_id_ = layer->ID();
+      }
       // 対象のレイヤーを活性化する
       active_layer->Activate(layer->ID());
     } else {
@@ -164,7 +185,7 @@ void Mouse::OnInterrupt(uint8_t buttons, int8_t displacement_x, int8_t displacem
   // マウス移動イベントを送る
   if (drag_layer_id_ == 0) {
     // ドラッグイベントではないときだけ。移動イベントを送る。
-    SendMouseMessage(newpos, posdiff, buttons);
+    SendMouseMessage(newpos, posdiff, buttons, previous_buttons_);
   }
 
   // 再入時のために既存のボタン変数をいれておく。

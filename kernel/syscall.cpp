@@ -215,6 +215,7 @@ namespace syscall {
         break;
       }
       switch (msg->type) {
+        // Messageイベントをapp_eventに変換する
         case Message::kKeyPush:
           if (msg->arg.keyboard.keycode == 20 /* Q Key */ &&
               msg->arg.keyboard.modifier && (kLControlBitMask | kRControlBitMask)) {
@@ -230,6 +231,14 @@ namespace syscall {
           app_events[i].arg.mouse_move.dx = msg->arg.mouse_move.dx;
           app_events[i].arg.mouse_move.dy = msg->arg.mouse_move.dy;
           app_events[i].arg.mouse_move.buttons = msg->arg.mouse_move.buttons;
+          ++i;
+          break;
+        case Message::kMouseButton:
+          app_events[i].type = AppEvent::kMouseButton;
+          app_events[i].arg.mouse_button.x = msg->arg.mouse_button.x;
+          app_events[i].arg.mouse_button.y = msg->arg.mouse_button.y;
+          app_events[i].arg.mouse_button.press = msg->arg.mouse_button.press;
+          app_events[i].arg.mouse_button.button = msg->arg.mouse_button.button;
           ++i;
           break;
         default:
