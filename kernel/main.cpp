@@ -266,7 +266,7 @@ extern "C" void KernelMainNewStack(
   //! カーソル点滅のためのタイマーであることをしめす値としていれておく
   const int kTextboxCursorTimer = 1;
   const int kTimer05Sec = static_cast<int>(kTimerFreq * 0.5);
-  timer_manager->AddTimer(Timer{kTimer05Sec, kTextboxCursorTimer});
+  timer_manager->AddTimer(Timer{kTimer05Sec, kTextboxCursorTimer, 1});
   bool textbox_cursor_visible = false;
 
   // 上位アプリがシステムコールを呼び出せるように初期化
@@ -353,7 +353,7 @@ extern "C" void KernelMainNewStack(
         if (msg->arg.timer.value  == kTextboxCursorTimer) {
           __asm__("cli");  // 割り込み禁止
           timer_manager->AddTimer(
-              Timer{msg->arg.timer.timeout + kTimer05Sec, kTextboxCursorTimer});
+              Timer{msg->arg.timer.timeout + kTimer05Sec, kTextboxCursorTimer, 1});
           __asm__("sti"); // 割り込み許可
           // 点滅のため、割り込みのたびに反転
           textbox_cursor_visible = !textbox_cursor_visible;

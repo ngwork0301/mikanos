@@ -463,7 +463,7 @@ void InitializeTask() {
 
   __asm__("cli");  // 割り込み禁止
   timer_manager->AddTimer(
-      Timer{timer_manager->CurrentTick() + kTaskTimerPeriod, kTaskTimerValue});
+      Timer{timer_manager->CurrentTick() + kTaskTimerPeriod, kTaskTimerValue, 1});
   __asm__("sti");  // 割り込み許可
 }
 

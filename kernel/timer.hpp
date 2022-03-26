@@ -28,15 +28,18 @@ void StopLAPICTimer();
  */
 class Timer {
   public:
-    Timer(unsigned long timeout, int value);
+    Timer(unsigned long timeout, int value, uint64_t taskid);
     unsigned long Timeout() const { return timeout_; }
     int Value() const { return value_; }
+    uint64_t TaskID() const { return task_id_; }
 
   private:
     //! タイムアウト時刻
     unsigned long timeout_;
     //! タイムアウト時に送信する値
     int value_;
+    //! タイムアウトを通知するタスクID
+    uint64_t task_id_;
 };
 
 /**
@@ -75,5 +78,5 @@ extern unsigned long lapic_timer_freq;
 const int kTimerFreq = 100;
 //! タスク切り替え用タイマーの周期 (Hz)
 const int kTaskTimerPeriod = static_cast<int>(kTimerFreq * 0.02);
-//! タスク切り替え用タイマーの持つ数値(他のタイマーで使わない値=int最小の値)
-const int kTaskTimerValue = std::numeric_limits<int>::min();
+//! タスク切り替え用タイマーの持つ数値(他のタイマーで使わない値=int最大の値)
+const int kTaskTimerValue = std::numeric_limits<int>::max();

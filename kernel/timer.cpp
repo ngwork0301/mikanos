@@ -3,6 +3,7 @@
 #include "acpi.hpp"
 #include "interrupt.hpp"
 #include "task.hpp"
+#include "logger.hpp"
 
 namespace {
   const uint32_t kCountMax = 0xffffffffu;
@@ -86,9 +87,10 @@ void StopLAPICTimer() {
  * Timerインスタンスを生成する。
  * @param [in] timeout タイムアウト値
  * @param [in] value タイマーに関連付けする値
+ * @param [in] task_id タイムアウトを通知するタスクID
  */
-Timer::Timer(unsigned long timeout, int value)
-    : timeout_{timeout}, value_{value} {
+Timer::Timer(unsigned long timeout, int value, uint64_t task_id)
+    : timeout_{timeout}, value_{value}, task_id_{task_id} {
 }
 
 /**
@@ -100,7 +102,7 @@ Timer::Timer(unsigned long timeout, int value)
  */
 TimerManager::TimerManager() {
   // 番兵として１番タイムアウト値の大きなタイマーインスタンスを加えておく
-  timers_.push(Timer{std::numeric_limits<unsigned long>::max(), -1});
+  timers_.push(Timer{std::numeric_limits<unsigned long>::max(), 0, 0});
 }
 
 /**
@@ -142,15 +144,15 @@ bool TimerManager::Tick() {
       task_timer_timeout = true;
       // イベントキューに入れないでスキップして入れ直し。
       timers_.pop();
-      timers_.push(Timer{tick_ + kTaskTimerPeriod, kTaskTimerValue});
+      timers_.push(Timer{tick_ + kTaskTimerPeriod, kTaskTimerValue, 1});
       continue;
     }
 
     Message m{Message::kTimerTimeout};
     m.arg.timer.timeout = t.Timeout();
     m.arg.timer.value = t.Value();
-    // メインタスク(ID=1)のイベントキューにkTimerTimeoutメッセージを入れる
-    task_manager->SendMessage(1, m);
+    // 対象のタスクのイベントキューにkTimerTimeoutメッセージを入れる
+    task_manager->SendMessage(t.TaskID(), m);
 
     // タイムアウトしたのでtimers_からこのタイマーを取り除く
     timers_.pop();

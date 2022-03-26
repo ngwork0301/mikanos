@@ -9,6 +9,7 @@ struct AppEvent {
     kQuit,
     kMouseMove,
     kMouseButton,
+    kTimerTimeout,
   } type;
 
   /**
@@ -16,6 +17,13 @@ struct AppEvent {
    * 引数の共用体
    */
   union {
+
+    /**
+     * @struct
+     * mouse_move構造体
+     * @brief 
+     * マウス移動イベント
+     */
     struct {
       //! マウス座標
       int x, y;
@@ -25,6 +33,12 @@ struct AppEvent {
       uint8_t buttons;
     } mouse_move;
 
+    /**
+     * @struct
+     * mouse_button構造体
+     * @brief 
+     * マウスボタンイベント
+     */
     struct {
       //! マウス座標
       int x, y;
@@ -32,6 +46,19 @@ struct AppEvent {
       //! 押したボタン 右クリック or 左クリック
       int button;
     } mouse_button;
+
+    /**
+     * @struct
+     * timer構造体
+     * @brief 
+     * タイムアウトイベント
+     */
+    struct {
+      //! タイムアウト値
+      unsigned long timeout;
+      //! タイムアウトしたときに通知する値
+      int value;
+    } timer;
   } arg;
 };
 
