@@ -16,7 +16,7 @@ extern "C" void main(int argc, char** argv) {
   AppEvent events[1];
   while(1) {
     SyscallReadEvent(events, 1);
-    if (evnets[0].type == AppEvent::kTimerTimeout) {
+    if (events[0].type == AppEvent::kTimerTimeout) {
       printf("%lu msecs elapsed!\n", duration_ms);
       break;
     } else {
