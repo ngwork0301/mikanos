@@ -373,6 +373,11 @@ extern "C" void KernelMainNewStack(
             // アクティブウィンドウがテキストボックスであれば、その内に文字列を描画
             InputTextWindow(msg->arg.keyboard.ascii);
           }
+        } else if (msg->arg.keyboard.press && 
+                   msg->arg.keyboard.keycode == 59 /* F2 */) {
+          task_manager->NewTask()
+            .InitContext(TaskTerminal, 0)
+            .Wakeup();
         } else {
           // その他のウィンドウがアクティブの場合は、そのレイヤーにkKeyPushイベントを送る
           __asm__("cli"); //割り込み禁止
