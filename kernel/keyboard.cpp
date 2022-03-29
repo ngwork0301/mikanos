@@ -42,7 +42,7 @@ namespace {
 
 void InitializeKeyboard() {
   usb::HIDKeyboardDriver::default_observer =
-    [](uint8_t modifier, uint8_t keycode) {
+    [](uint8_t modifier, uint8_t keycode, bool press) {
         //! 右または左SHIFTキーが押されているか
         const bool shift = (modifier & (kLShiftBitMask | kRShiftBitMask)) != 0;
         char ascii = keycode_map[keycode];
@@ -54,6 +54,7 @@ void InitializeKeyboard() {
         msg.arg.keyboard.modifier = modifier;
         msg.arg.keyboard.keycode = keycode;
         msg.arg.keyboard.ascii = ascii;
+        msg.arg.keyboard.press = press;
         // メインタスク(タスクID=1)のイベントキューにメッセージを送る
         task_manager->SendMessage(1, msg);
     };

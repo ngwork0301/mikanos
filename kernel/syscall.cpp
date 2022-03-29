@@ -222,6 +222,13 @@ namespace syscall {
             // 受け取ったイベントをAppEventに変換
             app_events[i].type = AppEvent::kQuit;
             ++i;
+          } else {
+            app_events[i].type = AppEvent::kKeyPush;
+            app_events[i].arg.keypush.modifier = msg->arg.keyboard.modifier;
+            app_events[i].arg.keypush.keycode = msg->arg.keyboard.keycode;
+            app_events[i].arg.keypush.ascii = msg->arg.keyboard.ascii;
+            app_events[i].arg.keypush.press = msg->arg.keyboard.press;
+            ++i;
           }
           break;
         case Message::kMouseMove:

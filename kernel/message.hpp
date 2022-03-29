@@ -49,6 +49,7 @@ struct Message {
       uint8_t modifier;
       uint8_t keycode;
       char ascii;
+      bool press;
     } keyboard;
 
     struct {

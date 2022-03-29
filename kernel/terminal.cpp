@@ -907,14 +907,16 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
       case Message::kKeyPush:
         // キー入力イベントが送られてきたとき
         {
-          const auto area = terminal->InputKey(msg->arg.keyboard.modifier,
-                                               msg->arg.keyboard.keycode,
-                                               msg->arg.keyboard.ascii);
-          Message msg = MakeLayerMessage(
-              task_id, terminal->LayerID(), LayerOperation::DrawArea, area);
-          __asm__("cli"); //割り込み禁止
-          task_manager->SendMessage(1, msg);
-          __asm__("sti"); //割り込み許可
+          if (msg->arg.keyboard.press) {
+            const auto area = terminal->InputKey(msg->arg.keyboard.modifier,
+                                                msg->arg.keyboard.keycode,
+                                                msg->arg.keyboard.ascii);
+            Message msg = MakeLayerMessage(
+                task_id, terminal->LayerID(), LayerOperation::DrawArea, area);
+            __asm__("cli"); //割り込み禁止
+            task_manager->SendMessage(1, msg);
+            __asm__("sti"); //割り込み許可
+          }
         }
         break;
       default:

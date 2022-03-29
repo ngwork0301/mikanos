@@ -369,8 +369,10 @@ extern "C" void KernelMainNewStack(
       // キーボード入力イベントの場合
       case Message::kKeyPush:
         if (auto act = active_layer->GetActive(); act == text_window_layer_id) {
-          // アクティブウィンドウがテキストボックスであれば、その内に文字列を描画
-          InputTextWindow(msg->arg.keyboard.ascii);
+          if (msg->arg.keyboard.press) {
+            // アクティブウィンドウがテキストボックスであれば、その内に文字列を描画
+            InputTextWindow(msg->arg.keyboard.ascii);
+          }
         } else {
           // その他のウィンドウがアクティブの場合は、そのレイヤーにkKeyPushイベントを送る
           __asm__("cli"); //割り込み禁止
