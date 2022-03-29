@@ -11,6 +11,7 @@
 #include "memory_manager.hpp"
 #include "pci.hpp"
 #include "paging.hpp"
+#include "timer.hpp"
 
 namespace {
   /**
@@ -872,10 +873,18 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
   Terminal* terminal = new Terminal{task_id};
   layer_manager->Move(terminal->LayerID(), {100, 200});
   active_layer->Activate(terminal->LayerID());
+  bool window_isactive = true;
   // ターミナルタスクを検索表に登録する
   layer_task_map->insert(std::make_pair(terminal->LayerID(), task_id));
   (*terminals)[task_id] = terminal;
   __asm__("sti"); // 割り込みを許可
+
+  // カーソル点滅用のタイマーを設定
+  auto add_blink_timer = [task_id](unsigned long t) {
+    timer_manager->AddTimer(Timer{t + static_cast<int>(kTimerFreq * 0.5),
+                            1, task_id});
+  };
+  add_blink_timer(timer_manager->CurrentTick());
 
   while (true) {
     __asm__("cli"); // 割り込みを抑止
@@ -891,17 +900,18 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
       case Message::kTimerTimeout:
         // カーソル点滅のためのタイマーイベントが送られてきたとき
         {
-          const auto area = terminal->BlinkCursor();
+          // 再点滅のタイマーを設定
+          add_blink_timer(msg->arg.timer.timeout);
+          if (window_isactive) {
+            const auto area = terminal->BlinkCursor();
 
-          // メインタスク(ID=1)に画面描画処理を呼び出し
-          Message msg = MakeLayerMessage(
-              task_id, terminal->LayerID(), LayerOperation::DrawArea, area);
-          // Message msg{Message::kLayer, task_id};
-          // msg.arg.layer.layer_id = terminal->LayerID();
-          // msg.arg.layer.op = LayerOperation::Draw;
-          __asm__("cli"); // 割り込みを抑止
-          task_manager->SendMessage(1, msg);
-          __asm__("sti"); // 割り込みを許可
+            // メインタスク(ID=1)に画面描画処理を呼び出し
+            Message msg = MakeLayerMessage(
+                task_id, terminal->LayerID(), LayerOperation::DrawArea, area);
+            __asm__("cli"); // 割り込みを抑止
+            task_manager->SendMessage(1, msg);
+            __asm__("sti"); // 割り込みを許可
+          }
         }
         break;
       case Message::kKeyPush:
@@ -918,6 +928,9 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
             __asm__("sti"); //割り込み許可
           }
         }
+        break;
+      case Message::kWindowActive:
+        window_isactive = msg->arg.window_active.activate;
         break;
       default:
         break;

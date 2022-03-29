@@ -34,6 +34,7 @@ struct Message {
     kLayerFinish,
     kMouseMove,
     kMouseButton,
+    kWindowActive,
   } type;
 
   //! kLayer, kLayerFinishでつかう送信元タスクのID
@@ -75,5 +76,9 @@ struct Message {
       //! 押したボタン 右クリック or 左クリック
       int button;
     } mouse_button;
+    struct {
+      int activate; // 1: activate, 0: deactivate
+    } window_active;
   } arg;
+
 };

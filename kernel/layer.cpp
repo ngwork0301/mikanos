@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <limits>
 #include "console.hpp"
+#include "task.hpp"
 #include "timer.hpp"
 #include "logger.hpp"
 
@@ -471,6 +472,27 @@ void ActiveLayer::SetMouseLayer(unsigned int mouse_layer) {
 
 /**
  * @fn
+ * SendWindowActiveMessage関数
+ * @brief 
+ * 指定されたレイヤーが属するタスクに、kWindowActivateメッセージを送る
+ * @param layer_id レイヤーID
+ * @param activate 活性/非活性
+ * @return Error 
+ */
+Error SendWindowActiveMessage(unsigned int layer_id, int activate) {
+  auto task_it = layer_task_map->find(layer_id);
+  if (task_it == layer_task_map->end()) {
+    return MAKE_ERROR(Error::kNoSuchTask);
+  }
+
+  Message msg{Message::kWindowActive};
+  msg.arg.window_active.activate = activate;
+  // task_it: ( first: layer_id, second: task_id )
+  return task_manager->SendMessage(task_it->second, msg);
+}
+
+/**
+ * @fn
  * ActiveLayer::Activateメソッド
  * 
  * @brief 
@@ -487,6 +509,8 @@ void ActiveLayer::Activate(unsigned int layer_id) {
     Layer* layer = manager_.FindLayer(active_layer_);
     layer->GetWindow()->Deactivate();
     manager_.Draw(active_layer_);
+    // 非活性になったレイヤーに通知イベントを送る。0はdeactivate
+    SendWindowActiveMessage(active_layer_, 0);
   }
 
   active_layer_ = layer_id;
@@ -502,6 +526,8 @@ void ActiveLayer::Activate(unsigned int layer_id) {
       manager_.UpDown(active_layer_, std::numeric_limits<int>::max());
     }
     manager_.Draw(active_layer_);
+    // 活性になったレイヤーに通知イベントを送る。1はactivateフラグ
+    SendWindowActiveMessage(active_layer_, 1);
   }
 }
 

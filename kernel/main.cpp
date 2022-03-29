@@ -280,7 +280,7 @@ extern "C" void KernelMainNewStack(
   // ターミナルとタスクのマッピングを初期化
   terminals = new std::map<uint64_t, Terminal*>;
   // ターミナル用タスクを生成して起床させる
-  const uint64_t task_terminal_id = task_manager->NewTask()
+  task_manager->NewTask()
     .InitContext(TaskTerminal, 0)
     .Wakeup()
     .ID();
@@ -360,10 +360,6 @@ extern "C" void KernelMainNewStack(
           DrawTextCursor(textbox_cursor_visible);
           layer_manager->Draw(text_window_layer_id);
 
-          // ターミナルタスクのカーソル点滅処理を呼び出し
-          __asm__("cli"); // 割り込み禁止
-          task_manager->SendMessage(task_terminal_id, *msg);
-          __asm__("sti"); // 割り込み禁止
         }
         break;
       // キーボード入力イベントの場合
