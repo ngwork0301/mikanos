@@ -17,6 +17,16 @@ namespace {
 
 /**
  * @fn
+ * ResetCR3関数
+ * @brief 
+ * CR3レジスタにOS用のPML4を設定する。
+ */
+void ResetCR3() {
+  SetCR3(reinterpret_cast<uint64_t>(&pml4_table[0]));
+}
+
+/**
+ * @fn
  * SetupIdentityPageTable関数
  * 
  * @brief 
@@ -37,7 +47,7 @@ void SetupIdentityPageTable() {
     }
   }
   // PML4（ページマップレベル4テーブル）の物理アドレスをCR3レジスタに設定
-  SetCR3(reinterpret_cast<uint64_t>(&pml4_table[0]));
+  ResetCR3();
 }
 
 /**

@@ -17,6 +17,8 @@
  */
 const size_t kPageDirectoryCount = 64;
 
+void ResetCR3();
+
 union PageMapEntry {
   uint64_t data;
 

@@ -781,6 +781,50 @@ Rectangle<int> Terminal::HistoryUpDown(int direction) {
 
 /**
  * @fn
+ * SetupPML4関数
+ * @brief 
+ * 新しいPML4を構築して、有効化する。
+ * @param current_task 対応するタスク
+ * @return WithError<PageMapEntry*> 
+ */
+WithError<PageMapEntry*> SetupPML4(Task& current_task) {
+  auto pml4 = NewPageMap();
+  if (pml4.error) {
+    return pml4;
+  }
+
+  // 現在のCR3レジスタが示すPML4のメモリ領域(OSが使う前半=64bit*256)をコピーする
+  const auto current_pml4 = reinterpret_cast<PageMapEntry*>(GetCR3());
+  memcpy(pml4.value, current_pml4, 256*sizeof(uint64_t));
+
+  // 新しいPML4への切り替え
+  const auto cr3 = reinterpret_cast<uint64_t>(pml4.value);
+  SetCR3(cr3);
+  // CR3レジスタの値をタスクのバックアップ用コンテキストにも設定
+  current_task.Context().cr3 = cr3;
+  return pml4;
+}
+
+/**
+ * @fn
+ * FreePML4関数
+ * @brief 
+ * タスクごとに確保したPML4を解放する
+ * @param current_task タスク
+ * @return Error 
+ */
+Error FreePML4(Task& current_task) {
+  const auto cr3 = current_task.Context().cr3;
+  // 実際のCR3をリセットする前にコンテキストのcr3値をリセットする
+  current_task.Context().cr3 = 0;
+  ResetCR3();
+
+  const FrameID frame{cr3 / kBytesPerFrame};
+  return memory_manager->Free(frame, 1);
+}
+
+/**
+ * @fn
  * Terminal::ExecuteFileメソッド
  * 
  * @brief 
@@ -802,6 +846,15 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
     f();
     return MAKE_ERROR(Error::kSuccess);
   }
+
+  // タスクごとの(PML4が示す)メモリ領域をセットアップする
+  __asm__("cli");  // 割り込み禁止
+  auto& task = task_manager->CurrentTask();
+  __asm__("sti");
+  if (auto pml4 = SetupPML4(task); pml4.error) {
+    return pml4.error;
+  }
+
   if (auto err = LoadELF(elf_header)) {
     return err;
   }
@@ -828,10 +881,6 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
     return err;
   }
 
-  __asm__("cli");  // 割り込みを禁止
-  auto& task = task_manager->CurrentTask();
-  __asm__("sti");  // 割り込みを許可
-
   auto entry_addr = elf_header->e_entry;
   // CS/SSレジスタを切り替えて、ユーザセグメントとして実行
   int ret = CallApp(argc.value, argv, 3 << 3 | 3, entry_addr,
@@ -848,7 +897,7 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
     return err;
   }
 
-  return MAKE_ERROR(Error::kSuccess);
+  return FreePML4(task);
 }
 
 /**

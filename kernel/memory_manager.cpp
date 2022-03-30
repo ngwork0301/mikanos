@@ -14,7 +14,7 @@ BitmapMemoryManager::BitmapMemoryManager()
  * Allocateメソッド
  * 
  * @brief
- * 空いているメモリ猟奇をファーストフィットアルゴリズムで探し出して、そのメモリを確保する
+ * 空いているメモリ領域をファーストフィットアルゴリズムで探し出して、そのメモリを確保する
  * 
  * @param [in] num_frames 取得するサイズ（フレーム数)
  * @return WithError エラーコードと発生したフレームID
