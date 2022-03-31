@@ -277,6 +277,15 @@ extern "C" void KernelMainNewStack(
   InitializeTask();
   Task& main_task = task_manager->CurrentTask();
 
+  // 以降の割り込みがあるものの初期化は、タスク機能の初期化がおわってから
+  // 常に手前に表示されるマウスレイヤーを最初に描画
+  // xHCIマウスデバイスを探し出して初期化
+  usb::xhci::Initialize();
+  // マウスウィンドウの初期化と描画
+  InitializeMouse();
+  // キーボードの初期化
+  InitializeKeyboard();
+
   // ターミナルとタスクのマッピングを初期化
   terminals = new std::map<uint64_t, Terminal*>;
   // ターミナル用タスクを生成して起床させる
@@ -284,14 +293,6 @@ extern "C" void KernelMainNewStack(
     .InitContext(TaskTerminal, 0)
     .Wakeup()
     .ID();
-
-  // 以降の割り込みがあるものの初期化は、タスク機能の初期化がおわってから
-  // xHCIマウスデバイスを探し出して初期化
-  usb::xhci::Initialize();
-  // マウスウィンドウの初期化と描画
-  InitializeMouse();
-  // キーボードの初期化
-  InitializeKeyboard();
 
   // ボリュームイメージの中身ををバイナリ形式で表示
   // uint8_t* p = reinterpret_cast<uint8_t*>(volume_image);

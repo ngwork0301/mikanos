@@ -518,13 +518,11 @@ void ActiveLayer::Activate(unsigned int layer_id) {
     // 0より大きいときは指定したレイヤーを活性化する
     Layer* layer = manager_.FindLayer(active_layer_);
     layer->GetWindow()->Activate();
-    if (mouse_layer_ > 0) {
-      // マウスレイヤ(常に最前面)よりひとつ手前まで持ってくる
-      manager_.UpDown(active_layer_, manager_.GetHeight(mouse_layer_) - 1);
-    } else {
-      // マウスレイヤーが初期値のまま(=0)のときは、最前面へ移動
-      manager_.UpDown(active_layer_, std::numeric_limits<int>::max());
-    }
+    // stack_layer_にない場合は追加するため、一旦最下層に追加
+    manager_.UpDown(active_layer_, 0);
+    // マウスレイヤ(常に最前面)よりひとつ手前まで持ってくる
+    manager_.UpDown(active_layer_, manager_.GetHeight(mouse_layer_) - 1);
+
     manager_.Draw(active_layer_);
     // 活性になったレイヤーに通知イベントを送る。1はactivateフラグ
     SendWindowActiveMessage(active_layer_, 1);
