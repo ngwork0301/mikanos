@@ -18,7 +18,7 @@ class Terminal {
     static const int kRows = 15, kColumns = 60;
     static const int kLineMax = 128;
 
-    Terminal(uint64_t task_id);
+    Terminal(uint64_t task_id, bool show_window);
     unsigned int LayerID() const { return layer_id_; }
     Rectangle<int> BlinkCursor();
     Rectangle<int> InputKey(uint8_t modifier, uint8_t keycode, char ascii);
@@ -31,6 +31,8 @@ class Terminal {
     unsigned int layer_id_;
     //! このターミナルのタスクID
     uint64_t task_id_;
+    //! ターミナルウィンドウの表示有無
+    bool show_window_;
 
     //! カーソル座標
     Vector2D<int> cursor_{0, 0};

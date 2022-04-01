@@ -367,30 +367,34 @@ Error LoadELF(Elf64_Ehdr* ehdr) {
 }
 
 /**
- * @fn Terminal::Terminalコンストラクタ
+ * @fn
+ * Terminal::Terminalコンストラクタ
  * @brief Construct a new Terminal:: Terminal object
- * @
- * 
+ * Terminalを生成する
+ * @param task_id 対応するタスクID
+ * @param show_window ターミナルウィンドウ表示の有無
  */
-Terminal::Terminal(uint64_t task_id) {
-  task_id_ = task_id;
-  // ターミナルウィンドウの生成
-  window_ = std::make_shared<ToplevelWindow>(
-    kColumns * 8 + 8 + ToplevelWindow::kMarginX,
-    kRows * 16 + 8 + ToplevelWindow::kMarginY,
-    screen_config.pixel_format,
-    "MikanTerm");
-  // 生成したターミナルウィンドウの描画
-  DrawTerminal(*window_->InnerWriter(), {0, 0}, window_->InnerSize());
+Terminal::Terminal(uint64_t task_id, bool show_window)
+    : task_id_{task_id}, show_window_{show_window} {
+  if (show_window_) {
+    // ターミナルウィンドウの生成
+    window_ = std::make_shared<ToplevelWindow>(
+      kColumns * 8 + 8 + ToplevelWindow::kMarginX,
+      kRows * 16 + 8 + ToplevelWindow::kMarginY,
+      screen_config.pixel_format,
+      "MikanTerm");
+    // 生成したターミナルウィンドウの描画
+    DrawTerminal(*window_->InnerWriter(), {0, 0}, window_->InnerSize());
 
-  // ターミナルレイヤーIDの設定
-  layer_id_ = layer_manager->NewLayer()
-    .SetWindow(window_)
-    .SetDraggable(true)
-    .ID();
-  
-  // プロンプトを出力
-  Print(">");
+    // ターミナルレイヤーIDの設定
+    layer_id_ = layer_manager->NewLayer()
+      .SetWindow(window_)
+      .SetDraggable(true)
+      .ID();
+    
+    // プロンプトを出力
+    Print(">");
+  }
 
   // コマンドヒストリの初期化
   cmd_history_.resize(8);
@@ -459,8 +463,10 @@ Rectangle<int> Terminal::InputKey(uint8_t modifier, uint8_t keycode, char ascii)
     if (cursor_.x > 0) {
       // カーソルの位置をずらす
       --cursor_.x;
-      // 1文字分黒で塗りつぶして消す
-      FillRectangle(*window_->Writer(), CalcCursorPos(), {8, 16}, {0, 0, 0});
+      if (show_window_) {
+        // 1文字分黒で塗りつぶして消す
+        FillRectangle(*window_->Writer(), CalcCursorPos(), {8, 16}, {0, 0, 0});
+      }
       draw_area.pos = CalcCursorPos();
 
       if (linebuf_index_ > 0) {
@@ -480,7 +486,9 @@ Rectangle<int> Terminal::InputKey(uint8_t modifier, uint8_t keycode, char ascii)
     if (cursor_.x < kColumns - 1 && linebuf_index_ < kLineMax - 1) {
       linebuf_[linebuf_index_] = ascii;
       ++linebuf_index_;
-      WriteAscii(*window_->Writer(), CalcCursorPos(), ascii, {255, 255, 255});
+      if (show_window_) {
+        WriteAscii(*window_->Writer(), CalcCursorPos(), ascii, {255, 255, 255});
+      }
       ++cursor_.x;
     }
   }
@@ -503,9 +511,11 @@ Rectangle<int> Terminal::InputKey(uint8_t modifier, uint8_t keycode, char ascii)
  * @param [in] visible (bool) カーソルの表示／非表示を指定
  */
 void Terminal::DrawCursor(bool visible) {
-  // 表示するときは白。非表示のときは背景色と同色の黒
-  const auto color = visible ? ToColor(0xffffff) : ToColor(0);
-  FillRectangle(*window_->Writer(), CalcCursorPos(), {7, 15}, color);
+  if (show_window_) {
+    // 表示するときは白。非表示のときは背景色と同色の黒
+    const auto color = visible ? ToColor(0xffffff) : ToColor(0);
+    FillRectangle(*window_->Writer(), CalcCursorPos(), {7, 15}, color);
+  }
 }
 
 /**
@@ -536,9 +546,11 @@ void Terminal::Scroll1() {
   };
   // 上記の範囲を1行分移動
   window_->Move(ToplevelWindow::kTopLeftMargin + Vector2D<int>{4, 4}, move_src);
-  // 最終行を黒で塗りつぶし
-  FillRectangle(*window_->InnerWriter(),
-                {4, 4 + 16*cursor_.y}, {8*kColumns, 16}, {0, 0, 0});
+  if (show_window_) {
+    // 最終行を黒で塗りつぶし
+    FillRectangle(*window_->InnerWriter(),
+                  {4, 4 + 16*cursor_.y}, {8*kColumns, 16}, {0, 0, 0});
+  }
 }
 
 /**
@@ -566,7 +578,9 @@ void Terminal::Print(char c) {
     // 改行コードは、1行改行する
     newline();
   } else {
-    WriteAscii(*window_->Writer(), CalcCursorPos(), c, {255, 255, 255});
+    if (show_window_) {
+      WriteAscii(*window_->Writer(), CalcCursorPos(), c, {255, 255, 255});
+    }
     if (cursor_.x == kColumns - 1) {
       // 出力する文字数が1行の最大文字数以上になったっら1行改行して出力
       newline();
@@ -608,18 +622,20 @@ void Terminal::Print(const char* s, std::optional<size_t> len) {
   DrawCursor(true);
   const auto cursor_after = CalcCursorPos();
 
-  // 文字列のエリアを特定して再描画
-  Vector2D<int> draw_pos{ToplevelWindow::kTopLeftMargin.x, cursor_before.y};
-  Vector2D<int> draw_size{window_->InnerSize().x,
-                          cursor_after.y - cursor_before.y + 16};
-  
-  Rectangle<int> draw_area{draw_pos, draw_size};
+  if (show_window_) {
+    // 文字列のエリアを特定して再描画
+    Vector2D<int> draw_pos{ToplevelWindow::kTopLeftMargin.x, cursor_before.y};
+    Vector2D<int> draw_size{window_->InnerSize().x,
+                            cursor_after.y - cursor_before.y + 16};
+    
+    Rectangle<int> draw_area{draw_pos, draw_size};
 
-  Message msg = MakeLayerMessage(
-      task_id_, LayerID(), LayerOperation::DrawArea, draw_area);
-  __asm__("cli");  // 割込み禁止
-  task_manager->SendMessage(1, msg);
-  __asm__("sti");  // 割り込み許可
+    Message msg = MakeLayerMessage(
+        task_id_, LayerID(), LayerOperation::DrawArea, draw_area);
+    __asm__("cli");  // 割込み禁止
+    task_manager->SendMessage(1, msg);
+    __asm__("sti");  // 割り込み許可
+  }
   
 }
 
@@ -644,9 +660,11 @@ void Terminal::ExecuteLine() {
     }
     Print("\n");
   } else if (strcmp(command, "clear") == 0) {
-    // ターミナル画面内をすべて黒で塗りつぶす
-    FillRectangle(*window_->InnerWriter(),
-                  {4, 4}, {8*kColumns, 16*kRows}, {0, 0, 0});
+    if (show_window_) {
+      // ターミナル画面内をすべて黒で塗りつぶす
+      FillRectangle(*window_->InnerWriter(),
+                    {4, 4}, {8*kColumns, 16*kRows}, {0, 0, 0});
+    }
     // カーソル位置を最初に戻す
     cursor_.y = 0;
   } else if (strcmp(command, "lspci") == 0) {
@@ -724,6 +742,11 @@ void Terminal::ExecuteLine() {
       }
       DrawCursor(true);
     }
+  } else if (strcmp(command, "noterm") == 0) {
+    // ターミナルを隠して、アプリを起動する
+    task_manager->NewTask()
+      .InitContext(TaskTerminal, reinterpret_cast<int64_t>(first_arg))
+      .Wakeup();
   } else if (command[0] != 0) {
     // 打ち込まれた名前が組み込みコマンド以外ならファイルを探す
     auto file_entry = fat::FindFile(command);
@@ -917,16 +940,29 @@ std::map<uint64_t, Terminal*>* terminals;
  * @param data 
  */
 void TaskTerminal(uint64_t task_id, int64_t data) {
+  // 引数にコマンドラインが渡されたら、画面を非表示にして起動する
+  const char* command_line = reinterpret_cast<char*>(data);
+  const bool show_window = command_line == nullptr;
+
   __asm__("cli"); // 割り込みを抑止
   Task& task = task_manager->CurrentTask();
-  Terminal* terminal = new Terminal{task_id};
-  layer_manager->Move(terminal->LayerID(), {100, 200});
-  active_layer->Activate(terminal->LayerID());
-  bool window_isactive = true;
-  // ターミナルタスクを検索表に登録する
-  layer_task_map->insert(std::make_pair(terminal->LayerID(), task_id));
+  Terminal* terminal = new Terminal{task_id, show_window};
+  if (show_window) {
+    layer_manager->Move(terminal->LayerID(), {100, 200});
+    // ターミナルタスクを検索表に登録する
+    layer_task_map->insert(std::make_pair(terminal->LayerID(), task_id));
+    active_layer->Activate(terminal->LayerID());
+  }
   (*terminals)[task_id] = terminal;
   __asm__("sti"); // 割り込みを許可
+
+  // 引数に渡されたコマンドラインをターミナルに入力する
+  if (command_line) {
+    for (int i = 0; command_line[i] != '\0'; ++i) {
+      terminal->InputKey(0, 0, command_line[i]);
+    }
+    terminal->InputKey(0, 0, '\n');
+  }
 
   // カーソル点滅用のタイマーを設定
   auto add_blink_timer = [task_id](unsigned long t) {
@@ -934,6 +970,8 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
                             1, task_id});
   };
   add_blink_timer(timer_manager->CurrentTick());
+
+  bool window_isactive = true;
 
   while (true) {
     __asm__("cli"); // 割り込みを抑止
@@ -951,7 +989,7 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
         {
           // 再点滅のタイマーを設定
           add_blink_timer(msg->arg.timer.timeout);
-          if (window_isactive) {
+          if (show_window && window_isactive) {
             const auto area = terminal->BlinkCursor();
 
             // メインタスク(ID=1)に画面描画処理を呼び出し
@@ -970,11 +1008,14 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
             const auto area = terminal->InputKey(msg->arg.keyboard.modifier,
                                                 msg->arg.keyboard.keycode,
                                                 msg->arg.keyboard.ascii);
-            Message msg = MakeLayerMessage(
-                task_id, terminal->LayerID(), LayerOperation::DrawArea, area);
-            __asm__("cli"); //割り込み禁止
-            task_manager->SendMessage(1, msg);
-            __asm__("sti"); //割り込み許可
+            // ターミナルを表示中の場合のみ文字列の描画処理を実行
+            if (show_window) {
+              Message msg = MakeLayerMessage(
+                  task_id, terminal->LayerID(), LayerOperation::DrawArea, area);
+              __asm__("cli"); //割り込み禁止
+              task_manager->SendMessage(1, msg);
+              __asm__("sti"); //割り込み許可
+            }
           }
         }
         break;
