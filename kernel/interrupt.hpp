@@ -99,6 +99,7 @@ struct InterruptFrame {
   uint64_t ss;
 };
 
+void KillApp(InterruptFrame* frame);
 void NotifyEndOfInterrupt();
 
 void InitializeInterrupt();

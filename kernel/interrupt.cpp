@@ -5,6 +5,8 @@
  */
 #include "interrupt.hpp"
 
+#include <csignal>
+
 #include "asmfunc.h"
 #include "font.hpp"
 #include "graphics.hpp"
@@ -124,9 +126,31 @@ void PrintFrame(InterruptFrame* frame, const char* exp_name) {
   PrintHex(frame->rsp, 16, {500 + 8*12, 16*3});
 }
 
+/**
+ * @fn
+ * KillApp関数
+ * @brief 
+ * アプリケーションを強制終了する
+ * @param frame CPU例外発生時のInterruptFrame
+ */
+void KillApp(InterruptFrame* frame) {
+  // CSレジスタからCPL(下位２ビット)を取り出し
+  const auto cpl = frame->cs &0x3;
+  // CPLが3意外だったら、アプリケーションによるCOPU例外ではないので何もしない
+  if (cpl != 3) {
+    return;
+  }
+
+  auto& task = task_manager->CurrentTask();
+  __asm__("sti"); // RFLAGSの IF (Interrupt Enable Flag) を1に戻すために実行
+  // 終了コードは、128に シグナルコードを加えたものにする。
+  ExitApp(task.OSStackPointer(), 128 + SIGSEGV);
+}
+
 #define FaultHandlerWithError(fault_name) \
   __attribute__((interrupt)) \
   void IntHandler ## fault_name (InterruptFrame* frame, uint64_t error_code) { \
+    KillApp(frame); \
     PrintFrame(frame, "#" #fault_name); \
     WriteString(*screen_writer, {500, 16*4}, "ERR", {0,0,0}); \
     PrintHex(error_code, 16, {500 + 8*4, 16*4}); \
@@ -136,6 +160,7 @@ void PrintFrame(InterruptFrame* frame, const char* exp_name) {
 #define FaultHandlerNoError(fault_name) \
   __attribute__((interrupt)) \
   void IntHandler ## fault_name (InterruptFrame* frame) { \
+    KillApp(frame); \
     PrintFrame(frame, "#" #fault_name); \
     while (true) __asm__("hlt"); \
   }

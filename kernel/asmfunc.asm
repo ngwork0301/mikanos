@@ -327,3 +327,17 @@ SyscallEntry:   ; void SyscallEntry(void);
     pop rbx
 
     ret   ; CallApp の次の行に飛ぶ
+
+global ExitApp  ; void ExitApp(uint64_t rsp, int32_t ret_val);
+ExitApp:
+    mov rsp, rdi    ; 第一引数に入っているOS用スタックポインタをRSPに戻す
+    mov eax, esi    ; 第２引数に入っている終了コードを戻り値としてRAXに入れる。
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+
+    ret   ; CallApp の次の行に飛ぶ

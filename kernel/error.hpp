@@ -39,6 +39,7 @@ class Error {
     kInvalidFormat,
     kFrameTooSmall,
     kError,
+    kInvalidFile,
     kLastOfCode,  // この列挙子は常に最後に配置する
   };
 
