@@ -641,6 +641,46 @@ void Terminal::Print(const char* s, std::optional<size_t> len) {
 
 /**
  * @fn
+ * ListAllEntries関数
+ * @brief 
+ * 指定されたcluster内のディレクトリエントリをターミナルに出力する。
+ * @param terminal 出力するターミナルインスタンス
+ * @param dir_cluster リストするディレクトリのfatクラスタ
+ */
+void ListAllEntries(Terminal* term, uint32_t dir_cluster) {
+  // ディレクトリ内のディレクトリエントリを取得して、1クラスタあたりのエントリ数を取得
+  // クラスタ　＞ ブロック＝セクタ、＞ バイト
+  const auto kEntriesPerCluster =
+    fat::bytes_per_cluster / sizeof(fat::DirectoryEntry);
+
+  // クラスタごとにループ
+  while (dir_cluster != fat::kEndOfClusterchain) {
+    auto dir = fat::GetSectorByCluster<fat::DirectoryEntry>(dir_cluster);
+
+    for (int i = 0; i < kEntriesPerCluster; ++i) {
+      if (dir[i].name[0] == 0x00) {
+        // 0x00のとき、このディレクトリエントリは空であとのエントリも無効のため終了
+        return;
+      } else if (static_cast<uint8_t>(dir[i].name[0]) == 0xe5) {
+        // 0xe5のときは、空のためスキップ
+        continue;
+      } else if (dir[i].attr == fat::Attribute::kLongName) {
+        // 長名専用の構造になっているためスキップ
+        continue;
+      }
+
+      char name[13];
+      fat::FormatName(dir[i], name);
+      term->Print(name);
+      term->Print("\n");
+    }
+
+    dir_cluster = fat::NextCluster(dir_cluster);
+  }
+}
+
+/**
+ * @fn
  * Terminal::ExecuteLineメソッド
  * 
  * @brief 
@@ -678,46 +718,45 @@ void Terminal::ExecuteLine() {
       Print(s);
     }
   } else if(strcmp(command, "ls") == 0) {
-    // ルートディレクトリの取得
-    auto root_dir_entries = fat::GetSectorByCluster<fat::DirectoryEntry>(
-      fat::boot_volume_image->root_cluster);
-    // ルートディレクトリ内のディレクトリエントリを取得して、1クラスタあたりのエントリ数を取得
-    // クラスタ　＞ ブロック＝セクタ、＞ バイト
-    auto entries_per_cluster =
-      fat::boot_volume_image->bytes_per_sector / sizeof(fat::DirectoryEntry)
-      * fat::boot_volume_image->sectors_per_cluster;
-    char base[9], ext[4];  //! ファイルの短名(拡張子を除く)、拡張子
-    char s[64];  //! ファイル名(拡張子含む)
-    // ディレクトリエントリごとにループ
-    for (int i = 0; i < entries_per_cluster; ++i) {
-      // 短名を取得
-      ReadName(root_dir_entries[i], base, ext);
-      if (base[0] == 0x00) {
-        // 0x00のとき、このディレクトリエントリは空であとのエントリも無効のため終了
-        break;
-      } else if (static_cast<uint8_t>(base[0]) == 0xe5) {
-        // 0xe5のときは、空のためスキップ
-        continue;
-      } else if (root_dir_entries[i].attr == fat::Attribute::kLongName) {
-        // 長名専用の構造になっているためスキップ
-        continue;
-      }
-
-      if (ext[0]) {
-        sprintf(s, "%s.%s\n", base, ext);
+    if (first_arg[0] == '\0') {
+      // 引数なしの場合は、ルートディレクトリの中身を表示
+      ListAllEntries(this, fat::boot_volume_image->root_cluster);
+    } else {
+      auto [ dir, post_slash ] = fat::FindFile(first_arg);
+      if (dir == nullptr) {
+        // 存在しなかった場合
+        Print("No such filr or directory: ");
+        Print(first_arg);
+        Print("\n");
+      } else if (dir->attr == fat::Attribute::kDirectory) {
+        // 引数で指定したものがディレクトリだったら、そのディレクトリの中身を表示
+        ListAllEntries(this, dir->FirstCluster());
       } else {
-        sprintf(s, "%s\n", base);
+        char name[13];
+        fat::FormatName(*dir, name);
+        if (post_slash) {
+          // 末尾に/がついていたときは、ディレクトリでなければエラー出力
+          Print(name);
+          Print(" is not directory.\n");
+        } else {
+          Print(name);
+          Print("\n");
+        }
       }
-      Print(s);
     }
   } else if(strcmp(command, "cat") == 0) {
     char s[64];
 
     // ファイルエントリを探す
-    auto file_entry = fat::FindFile(first_arg);
+    auto [ file_entry, post_slash ] = fat::FindFile(first_arg);
     if (!file_entry) {
       sprintf(s, "no such file: %s\n", first_arg);
       Print(s);
+    } else if (file_entry->attr != fat::Attribute::kDirectory && post_slash) {
+      char name[13];
+      fat::FormatName(*file_entry, name);
+      Print(name);
+      Print(" is not a directory\n");
     } else {
       auto cluster = file_entry->FirstCluster();
       auto remain_bytes = file_entry->file_size;
@@ -749,11 +788,16 @@ void Terminal::ExecuteLine() {
       .Wakeup();
   } else if (command[0] != 0) {
     // 打ち込まれた名前が組み込みコマンド以外ならファイルを探す
-    auto file_entry = fat::FindFile(command);
+    auto [ file_entry, post_slash ] = fat::FindFile(command);
     if(!file_entry) {
       Print("no such command: ");
       Print(command);
       Print("\n");
+    } else if (file_entry->attr != fat::Attribute::kDirectory && post_slash) {
+      char name[13];
+      fat::FormatName(*file_entry, name);
+      Print(name);
+      Print(" is not a directory\n");
     } else {
       ExecuteFile(*file_entry, command, first_arg);
     }

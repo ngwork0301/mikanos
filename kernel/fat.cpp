@@ -4,6 +4,35 @@
 #include <cctype>
 
 #include "logger.hpp"
+
+namespace {
+
+  /**
+   * @fn
+   * NextPathElement関数
+   * @brief 
+   * パスを/で区切った最初の要素を取得する
+   * @param [in] path パス文字列
+   * @param [out] path_elem 取得した最初の要素
+   * @return std::pair<const char*, bool> 
+   *  < 次のパス文字列のポインタ, 末尾かどうか > 
+   */
+  std::pair<const char*, bool>
+  NextPathElement(const char* path, char* path_elem) {
+    const char* next_slash = strchr(path, '/');
+    if (next_slash == nullptr) {
+      strcpy(path_elem, path);
+      return { nullptr, false };
+    }
+
+    const auto elem_len = next_slash - path;
+    strncpy(path_elem, path, elem_len);
+    path_elem[elem_len] = '\0';
+    return { &next_slash[1], true };
+  }
+
+} // namespace
+
 namespace fat {
 
 BPB* boot_volume_image;
@@ -45,6 +74,18 @@ uintptr_t GetClusterAddr(unsigned long cluster){
   return reinterpret_cast<uintptr_t>(boot_volume_image) + offset;
 }
 
+/** 
+ * @fn
+ * fat::ReadName関数
+ * 
+ * @brief 
+ * ディレクトリエントリの短名を基本名と拡張子名に分割して取得する。
+ * パディングされた空白文字（0x20）は取り除かれ，ヌル終端される。
+ *
+ * @param [in] entry  ファイル名を得る対象のディレクトリエントリ
+ * @param [out] base  拡張子を除いたファイル名（9 バイト以上の配列）
+ * @param [in, out] ext  拡張子（4 バイト以上の配列）
+ */
 void ReadName(const fat::DirectoryEntry& entry, char* base, char* ext){
   // 拡張子以外部分のコピー (短名8+3のうちの8をコピー)
   memcpy(base, &entry.name[0], 8);
@@ -60,6 +101,24 @@ void ReadName(const fat::DirectoryEntry& entry, char* base, char* ext){
   for (int i = 2; i >= 0 && ext[i] == ' '; --i) {
     // 末尾が空白の場合は、消す。
     ext[i] = '\0';
+  }
+}
+
+/** 
+ * @fn
+ * FormatName関数
+ * @brief 
+ * ディレクトリエントリの短名を dest にコピーする。
+ * 短名の拡張子が空なら "<base>" を，空でなければ "<base>.<ext>" をコピー。
+ *
+ * @param [in] entry  ファイル名を得る対象のディレクトリエントリ
+ * @param [out] dest  基本名と拡張子を結合した文字列を格納するに十分な大きさの配列。
+ */
+void FormatName(const DirectoryEntry& entry, char* dest){
+  char ext[5] = ".";
+  ReadName(entry, dest, &ext[1]);
+  if (ext[1]) {
+    strcat(dest, ext);
   }
 }
 
@@ -124,32 +183,56 @@ bool NameIsEqual(const DirectoryEntry& entry, const char* name){
  * @fn
  * FindFile関数
  * @brief 
- * 指定されたファイル名のファイルを探す
- * @param [in] name 検索したいファイル名
- * @param [in] directory_cluster クラスタ番号
- * @return DirectoryEntry* ファイルへの先頭ポインタ
+ * 指定されたディレクトリからファイルを探す。
+ * @param name  8+3形式のファイル名（大文字小文字は区別しない）
+ * @param directory_cluster  ディレクトリの開始クラスタ（省略するとルートディレクトリから検索する）
+ * @return ファイルまたはディレクトリを表すエントリと，末尾スラッシュを示すフラグの組。
+ *   ファイルまたはディレクトリが見つからなければ nullptr。
+ *   エントリの直後にスラッシュがあれば true。
+ *   パスの途中のエントリがファイルであれば探索を諦め，そのエントリと true を返す。
  */
-DirectoryEntry* FindFile(const char* name, unsigned long directory_cluster){
-  if(directory_cluster == 0) {
+std::pair<DirectoryEntry*, bool>
+FindFile(const char* path, unsigned long directory_cluster){
+  if (path[0] == '/') {
+    // /で始まる場合は、絶対パスなので、directory_clusterもrootに置き換える
+    directory_cluster = boot_volume_image->root_cluster;
+    ++path;
+  } else if (directory_cluster == 0) {
     // ０が入った場合は、ルートディレクトリから検索
     directory_cluster = boot_volume_image->root_cluster;
   }
+
+  //! パス区切り文字で区切った次の要素
+  char path_elem[13];
+  const auto [ next_path, post_slash ] = NextPathElement(path, path_elem);
+  //! 取り出した要素がパスの末尾かどうか
+  const bool path_last = next_path == nullptr || next_path[0] == '\0';
 
   while (directory_cluster != kEndOfClusterchain) {
     // クラスタ番号からブロックを取得
     auto dir = GetSectorByCluster<DirectoryEntry>(directory_cluster);
     // そのクラスタ内のディレクトリエントリごとにループ
     for (int i = 0; i < bytes_per_cluster / sizeof(DirectoryEntry); ++i) {
-      if (NameIsEqual(dir[i], name)) {
-        return &dir[i];
+      if (dir[i].name[0] == 0x00) {
+        goto not_found;
+      } else if (!NameIsEqual(dir[i], path_elem)) {
+        continue;
+      }
+
+      if (dir[i].attr == Attribute::kDirectory && !path_last) {
+        // ディレクトリでかつ末尾でないときは再帰的にサブディレクトリを探す
+        return FindFile(next_path, dir[i].FirstCluster());
+      } else {
+        // dir[i]がディレクトリではないか、パスの末尾に来てしまったので、探索をやめる
+        return { &dir[i], post_slash };
       }
     }
     // 次のクラスタへ移動
     directory_cluster = NextCluster(directory_cluster);
   }
 
-  // 見つからなかった場合
-  return nullptr;
+  not_found:
+    return { nullptr, post_slash };
 }
 
 /**
