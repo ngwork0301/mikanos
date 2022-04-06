@@ -10,27 +10,27 @@
  * _exit関数
  * 
  * @brief 
- * プログラムを就床する
+ * プログラムを終了する
  * @param [in] status 終了コード
  */
 void _exit(int status) {
   SyscallExit(status);
 }
 
-//! プログラムブレークと、その上限値を示すグローバル変数
-caddr_t program_break, program_break_end;
-
+/**
+ * @fn
+ * sbrk関数
+ * @brief 
+ * メモリを確保する
+ * @param incr 
+ * @return caddr_t 
+ */
 caddr_t sbrk(int incr) {
-  // プログラムブレークが初期化前または、上限値を超える場合は、ENUMEMでエラー
-  if (program_break == 0 || program_break + incr >= program_break_end) {
-    errno = ENOMEM;
-    return (caddr_t)-1;
-  }
-
-  // 現在のプログラムブレークをprev_breakに退避して必要な分増減したプログラムブレークを新たに設定
-  caddr_t prev_break = program_break;
-  program_break += incr;
-  return prev_break;
+  static uint8_t heap[4096];
+  static int i = 0;
+  int prev = i;
+  i += incr;
+  return (caddr_t)&heap[prev];
 }
 
 int getpid(void) {
@@ -52,8 +52,22 @@ off_t lseek(int fd, off_t offset, int whence) {
   return -1;
 }
 
+/**
+ * @fn
+ * read関数
+ * @brief 
+ * ラップしてReadFileシステムコールを呼び出す
+ * @param fd 読み込むファイルのファイルディスクリプタ
+ * @param buf 読み込み先バッファ
+ * @param count 読み込むバイト数
+ * @return ssize_t 読み込んだバイト数。エラーのときは-1
+ */
 ssize_t read(int fd, void* buf, size_t count) {
-  errno = EBADF;
+  struct SyscallResult res = SyscallReadFile(fd, buf, count);
+  if (res.error == 0) {
+    return res.value;
+  }
+  errno = res.error;
   return -1;
 }
 
@@ -69,6 +83,24 @@ ssize_t read(int fd, void* buf, size_t count) {
  */
 ssize_t write(int fd, const void* buf, size_t count) {
   struct SyscallResult res = SyscallPutString(fd, buf, count);
+  if (res.error == 0) {
+    return res.value;
+  }
+  errno = res.error;
+  return -1;
+}
+
+/**
+ * @fn
+ * open関数
+ * @brief 
+ * ラップして、OpenFileシステムコールを呼び出す
+ * @param path 読み込むファイルのパス文字列
+ * @param flags 読み込みモード r/w/a
+ * @return int 正常終了なら0。異常終了なら-1
+ */
+int open(const char* path, int flags) {
+  struct SyscallResult res = SyscallOpenFile(path, flags);
   if (res.error == 0) {
     return res.value;
   }

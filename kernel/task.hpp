@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "error.hpp"
+#include "fat.hpp"
 #include "message.hpp"
 
 /**
@@ -58,6 +59,7 @@ class Task {
     std::optional<Message> ReceiveMessage();
     bool Running() { return running_; }
     unsigned int Level() { return level_; }
+    std::vector<std::unique_ptr<fat::FileDescriptor>>& Files(){ return files_; };
   
   private:
     //! タスクID
@@ -74,6 +76,8 @@ class Task {
     unsigned int level_{kDefaultLevel};
     //! このタスクが実行状態／実行可能状態であるか
     bool running_{false};
+    //! このタスクがひらくファイルのファイルディスクリプタ配列
+    std::vector< std::unique_ptr<fat::FileDescriptor> > files_{};
 
     Task& SetLevel(int level) { level_ = level; return *this; }
     Task& SetRunning(bool running) { running_ = running; return *this; }
@@ -105,7 +109,7 @@ class TaskManager {
     Task& CurrentTask();
   private:
     //! タスクインスタンスのリスト
-    std::vector<std::unique_ptr<Task>> tasks_{};
+    std::vector< std::unique_ptr<Task> > tasks_{};
     //! 付与されている最新のタスクID
     uint64_t latest_id_{0};
     //! レベルごとのRunキューの集合

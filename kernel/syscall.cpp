@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cerrno>
 #include <cmath>
+#include <fcntl.h>
 
 #include "app_event.hpp"
 #include "asmfunc.h"
@@ -304,6 +305,87 @@ namespace syscall {
   namespace {
     /**
      * @fn
+     * AllocateFD関数
+     * @brief 
+     * 引数で与えられたタスクのもつファイルディスクリプター配列のうち、空き番号を取得する
+     * @param task 取得するファイルディスクリプターをもつ対象のタスク
+     * @return size_t ファイルディスクリプター番号
+     */
+    size_t AllocateFD(Task& task) {
+      const size_t num_files = task.Files().size();
+      for (size_t i = 0; i < num_files; ++i) {
+        if (!task.Files()[i]) {
+          return i;
+        }
+      }
+      // すべての要素が埋まっていたら空の要素を追加してその番号を返す。
+      task.Files().emplace_back();
+      return num_files;
+    }
+  }
+
+  /**
+   * @fn
+   * OpenFile関数
+   * @brief
+   * 引数に指定したパスのファイルを開く
+   * @param arg1 開くファイルのパス文字列
+   * @param arg2 モード r/w/a
+   * @return { ファイルディスクリプター、エラーコード }
+   */
+  SYSCALL(OpenFile) {
+    const char* path = reinterpret_cast<const char*>(arg1);
+    const int flags = arg2;
+    __asm__("cli");  // 割り込み禁止
+    auto& task = task_manager->CurrentTask();
+    __asm__("sti");  // 割り込み許可
+
+    if ((flags & O_ACCMODE) == O_WRONLY) {
+      // 書き込みモードはエラー
+      return { 0, EINVAL };
+    }
+
+    auto [ dir, post_slash ] = fat::FindFile(path);
+    if (dir == nullptr) {
+      return { 0, ENOENT };
+    } else if (dir->attr != fat::Attribute::kDirectory && post_slash) {
+      // ディレクトリでないのに、末尾に/がついているときもエラー
+      return { 0, ENOENT };
+    }
+
+    size_t fd = AllocateFD(task);
+    task.Files()[fd] = std::make_unique<fat::FileDescriptor>(*dir);
+    return { fd, 0 };
+  }
+
+  /**
+   * @fn
+   * ReadFile関数
+   * @brief
+   * 引数で与えられたファイルディスクリプターのファイルを読み出す
+   * @param [in] arg1 対象のファイルのファイルディスクリプター
+   * @param [out] arg2 読み出した中身を入れるバッファ
+   * @param [in] arg3 読み出すデータのサイズ
+   * @return { 読み込んだバイト数, エラー }
+   */
+  SYSCALL(ReadFile) {
+    const int fd = arg1;
+    void* buf = reinterpret_cast<void*>(arg2);
+    size_t count = arg3;
+    __asm__("cli");  // 割り込み禁止
+    auto& task = task_manager->CurrentTask();
+    __asm__("sti");  // 割り込み許可
+
+    if (fd < 0 || task.Files().size() <= fd || !task.Files()[fd]) {
+      // 現在のタスクに指定されたファイルディスクリプターがみつからなかったらエラー
+      return { 0, EBADF};
+    }
+    return { task.Files()[fd]->Read(buf, count), 0 };
+  }
+
+  namespace {
+    /**
+     * @fn
      * DoWinFunc関数テンプレート
      * @brief 
      * ユーザアプリが作成したウィンドウへの描画の共通処理
@@ -473,7 +555,7 @@ namespace syscall {
 
 using SyscallFuncType = syscall::Result (uint64_t, uint64_t, uint64_t,
                                  uint64_t, uint64_t, uint64_t);
-extern "C" std::array<SyscallFuncType*, 12> syscall_table{
+extern "C" std::array<SyscallFuncType*, 14> syscall_table{
   /* 0x00 */ syscall::LogString,
   /* 0x01 */ syscall::PutString,
   /* 0x02 */ syscall::Exit,
@@ -486,6 +568,8 @@ extern "C" std::array<SyscallFuncType*, 12> syscall_table{
   /* 0x09 */ syscall::CloseWindow,
   /* 0x0a */ syscall::ReadEvent,
   /* 0x0b */ syscall::CreateTimer,
+  /* 0x0c */ syscall::OpenFile,
+  /* 0x0d */ syscall::ReadFile,
 };
 
 void InitializeSyscall() {

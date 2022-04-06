@@ -41,6 +41,57 @@ unsigned long bytes_per_cluster;
 
 /**
  * @fn
+ * fat::FileDescriptor::FileDescriptorコンストラクタ
+ * @brief Construct a new File Descriptor:: File Descriptor object
+ * fat::FileDescriptorのコンストラクタ
+ * @param fat_entry ディレクトリエントリ
+ */
+FileDescriptor::FileDescriptor(DirectoryEntry& fat_entry) 
+    :fat_entry_{fat_entry} {
+}
+
+/**
+ * @fn
+ * fat::FileDescriptor::Readメソッド
+ * @brief 
+ * このファイルディスクリプタを指定されたバイト数読み込む
+ * @param [out] buf 読み込み先のバッファ
+ * @param [in] len 読み込むデータのバイト数
+ * @return size_t 
+ */
+size_t FileDescriptor::Read(void* buf, size_t len) {
+  // 初めての読み込みのときは、まずクラスタを得る
+  if (rd_cluster_ == 0) {
+    rd_cluster_ = fat_entry_.FirstCluster();
+  }
+  uint8_t* buf8 = reinterpret_cast<uint8_t*>(buf);
+  // 指定したバイト数より残りのファイル中身のバイト数が少なければそこまでを読み込むようにする。
+  len = std::min(len, fat_entry_.file_size - rd_off_);
+
+  //! 最終的によみとったバイト数
+  size_t total = 0;
+  while (total < len) {
+    uint8_t* sec = GetSectorByCluster<uint8_t>(rd_cluster_);
+    // 読み込むバイト数よりもこのクラスタ内の残りのバイト数が少なければ、そこまでを読み込む
+    size_t n = std::min(len - total, bytes_per_cluster - rd_cluster_off_);
+    memcpy(&buf8[total], &sec[rd_cluster_off_], n);
+    total += n;
+
+    rd_cluster_off_ += n;
+    // ちょうどこのクラスタの終わりになった時
+    if (rd_cluster_off_ == bytes_per_cluster) {
+      rd_cluster_ = NextCluster(rd_cluster_);
+      rd_cluster_off_ = 0;
+    }
+  }
+
+  rd_off_ += total;
+  return total;
+}
+
+
+/**
+ * @fn
  * fat::Initialize関数
  * @brief 
  * FATボリュームの初期化をおこなう。

@@ -69,6 +69,29 @@ namespace fat{
         (static_cast<uint32_t>(first_cluster_high) << 16);
     }
   } __attribute__((packed));
+
+  /**
+   * @class
+   * fat::FileDescriptorクラス
+   * @brief 
+   * fatフォーマットにおけるファイルディスクリプタ
+   */
+  class FileDescriptor {
+    public:
+      explicit FileDescriptor(DirectoryEntry& fat_entry);
+      size_t Read(void* buf, size_t len);
+
+    private:
+      //! このファイルディスクリプタがさすファイルへの参照
+      DirectoryEntry& fat_entry_;
+      //! ファイル先頭からの読み込みオフセット（バイト単位）
+      size_t rd_off_ = 0;
+      //! rd_off_が指す位置に対応するクラスタ番号
+      unsigned long rd_cluster_ = 0;
+      //! クラスタ先頭からのオフセット（バイト単位）
+      size_t rd_cluster_off_ = 0;
+  };
+
   
   //! クラスタチェーンの末尾を表す特別なクラスタ番号
   static const unsigned long kEndOfClusterchain = 0x0ffffffflu;
