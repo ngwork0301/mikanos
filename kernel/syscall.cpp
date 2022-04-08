@@ -340,6 +340,10 @@ namespace syscall {
     auto& task = task_manager->CurrentTask();
     __asm__("sti");  // 割り込み許可
 
+    // パス文字列が@stdinだったら、特別扱いで標準入力のファイルディスクリプタを返す
+    if (strcmp(path, "@stdin") == 0) {
+      return { 0, 0 };
+    }
     if ((flags & O_ACCMODE) == O_WRONLY) {
       // 書き込みモードはエラー
       return { 0, EINVAL };

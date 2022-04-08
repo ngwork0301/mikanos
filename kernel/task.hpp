@@ -59,7 +59,7 @@ class Task {
     std::optional<Message> ReceiveMessage();
     bool Running() { return running_; }
     unsigned int Level() { return level_; }
-    std::vector<std::unique_ptr<fat::FileDescriptor>>& Files(){ return files_; };
+    std::vector<std::unique_ptr<FileDescriptor>>& Files(){ return files_; };
   
   private:
     //! タスクID
@@ -77,7 +77,7 @@ class Task {
     //! このタスクが実行状態／実行可能状態であるか
     bool running_{false};
     //! このタスクがひらくファイルのファイルディスクリプタ配列
-    std::vector< std::unique_ptr<fat::FileDescriptor> > files_{};
+    std::vector< std::unique_ptr<FileDescriptor> > files_{};
 
     Task& SetLevel(int level) { level_ = level; return *this; }
     Task& SetRunning(bool running) { running_ = running; return *this; }

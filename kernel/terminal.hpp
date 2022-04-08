@@ -9,6 +9,7 @@
 #include <map>
 #include <optional>
 #include "fat.hpp"
+#include "file.hpp"
 #include "window.hpp"
 #include "task.hpp"
 #include "layer.hpp"
@@ -55,6 +56,22 @@ class Terminal {
     //! 現在表示中のヒストリのインデックス(小さいほど新しい)
     int cmd_history_index_{-1};
     Rectangle<int> HistoryUpDown(int direction);
+};
+
+/**
+ * @class
+ * TerminalFileDescriptor
+ * @brief 
+ * 標準入出力をFileDescriptorとしてあつかえるようにしたクラス
+ */
+class TerminalFileDescriptor : public FileDescriptor {
+  public:
+    explicit TerminalFileDescriptor(Task& task, Terminal& term);
+    size_t Read(void* buf, size_t len) override;
+
+  private:
+    Task& task_;
+    Terminal& term_;
 };
 
 extern std::map<uint64_t, Terminal*>* terminals;

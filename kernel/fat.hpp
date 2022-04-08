@@ -9,6 +9,8 @@
 #include <cstddef>
 #include <iostream>
 
+#include "file.hpp"
+
 namespace fat{
   struct BPB {
     uint8_t jump_boot[3];
@@ -76,10 +78,10 @@ namespace fat{
    * @brief 
    * fatフォーマットにおけるファイルディスクリプタ
    */
-  class FileDescriptor {
+  class FileDescriptor : public ::FileDescriptor{
     public:
       explicit FileDescriptor(DirectoryEntry& fat_entry);
-      size_t Read(void* buf, size_t len);
+      size_t Read(void* buf, size_t len) override;
 
     private:
       //! このファイルディスクリプタがさすファイルへの参照
@@ -122,4 +124,3 @@ namespace fat{
       FindFile(const char* path, unsigned long directory_cluster = 0);
   size_t LoadFile(void* buf, size_t len, const DirectoryEntry& entry);
 }
-

@@ -949,11 +949,17 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
     return err;
   }
 
+  // 起動するアプリ側で使用できるように、このタスクのfd=0に標準入力を設定する
+  task.Files().push_back(
+      std::make_unique<TerminalFileDescriptor>(task, *this));
+
   auto entry_addr = elf_header->e_entry;
   // CS/SSレジスタを切り替えて、ユーザセグメントとして実行
   int ret = CallApp(argc.value, argv, 3 << 3 | 3, entry_addr,
       stack_frame_addr.value + 4096 - 8,
       &task.OSStackPointer());
+  // アプリ側が使用する不ァイルディスクリプタをクリア
+  task.Files().clear();
 
   char s[64];
   sprintf(s, "app exited. ret = %d\n", ret);
@@ -966,6 +972,49 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
   }
 
   return FreePML4(task);
+}
+
+/**
+ * @fn
+ * TerminalFileDescriptor::TerminalFileDescriptorコンストラクタ
+ * @brief Construct a new Terminal File Descriptor:: Terminal File Descriptor object
+ * 
+ * @param task 
+ * @param term 
+ */
+TerminalFileDescriptor::TerminalFileDescriptor(Task& task, Terminal& term)
+    : task_{task}, term_{term} {
+}
+
+/**
+ * @fn
+ * TerminalFileDescriptor::Readメソッド
+ * @brief 
+ * キーボード入力を読んで引数で指定されたバッファに入れる
+ * @param [out] buf 読み込んだ文字列をいれるバッファ
+ * @param [in] len 読み込むバイト数
+ * @return size_t 読み込んだバイト数
+ */
+size_t TerminalFileDescriptor::Read(void* buf, size_t len) {
+  char* bufc = reinterpret_cast<char*>(buf);
+
+  // キーボード入力イベントを待つ
+  while(true) {
+    __asm__("cli"); // 割り込み禁止。この間は、タスク切り替え、タイマー処理も発生しなくなる！
+    auto msg = task_.ReceiveMessage();
+    if (!msg) {
+      task_.Sleep();
+      continue;
+    }
+    __asm__("sti"); // 割り込み許可
+
+    if (msg->type == Message::kKeyPush && msg->arg.keyboard.press) {
+      bufc[0] = msg->arg.keyboard.ascii;
+      // 入力された文字をエコーバックする
+      term_.Print(bufc, 1);
+      return 1;
+    }
+  }
 }
 
 /**
