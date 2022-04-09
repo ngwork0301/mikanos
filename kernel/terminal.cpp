@@ -6,6 +6,7 @@
 #include "asmfunc.h"
 #include "elf.hpp"
 #include "font.hpp"
+#include "keyboard.hpp"
 #include "layer.hpp"
 #include "logger.hpp"
 #include "memory_manager.hpp"
@@ -1008,12 +1009,24 @@ size_t TerminalFileDescriptor::Read(void* buf, size_t len) {
     }
     __asm__("sti"); // 割り込み許可
 
-    if (msg->type == Message::kKeyPush && msg->arg.keyboard.press) {
-      bufc[0] = msg->arg.keyboard.ascii;
-      // 入力された文字をエコーバックする
-      term_.Print(bufc, 1);
-      return 1;
+    if (msg->type != Message::kKeyPush || !msg->arg.keyboard.press) {
+      // キーボード入力以外のイベントはスキップ
+      continue;
     }
+    if (msg->arg.keyboard.modifier & (kLControlBitMask | kRControlBitMask)) {
+      char s[3] = "^ ";
+      s[1] = toupper(msg->arg.keyboard.ascii);
+      // 入力された文字をエコーバックする
+      term_.Print(s);
+      if (msg->arg.keyboard.keycode == 7 /* D */) {
+        return 0;  // EOT
+      }
+      continue;
+    }
+    bufc[0] = msg->arg.keyboard.ascii;
+    // 入力された文字をエコーバックする
+    term_.Print(bufc, 1);
+    return 1;
   }
 }
 
