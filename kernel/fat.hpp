@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <iostream>
 
+#include "error.hpp"
 #include "file.hpp"
 
 namespace fat{
@@ -122,5 +123,6 @@ namespace fat{
   bool NameIsEqual(const DirectoryEntry& entry, const char* name);
   std::pair<DirectoryEntry*, bool> 
       FindFile(const char* path, unsigned long directory_cluster = 0);
+  WithError<DirectoryEntry*> CreateFile(const char* path);
   size_t LoadFile(void* buf, size_t len, const DirectoryEntry& entry);
 }

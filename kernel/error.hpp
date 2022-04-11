@@ -40,6 +40,8 @@ class Error {
     kFrameTooSmall,
     kError,
     kInvalidFile,
+    kIsDirectory,
+    kNoSuchEntry,
     kLastOfCode,  // この列挙子は常に最後に配置する
   };
 
@@ -67,6 +69,8 @@ class Error {
     "kNoWaiter",
     "kNoPCIMSI",
     "kUnknownPixelFormat",
+    "kIsDirectory",
+    "kNoSuchEntry",
     "kNoSuchTask"
   };
   static_assert(Error::Code::kLastOfCode == code_names_.size());

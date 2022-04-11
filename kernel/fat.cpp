@@ -288,6 +288,170 @@ FindFile(const char* path, unsigned long directory_cluster){
 
 /**
  * @fn
+ * GetFAT関数
+ * @brief 
+ * FATボリューム(32ビット値の配列)の先頭ポインタを取得する
+ * @return uint32_t* FATボリュームのアドレス
+ */
+uint32_t* GetFAT() {
+  uintptr_t fat_offset =
+    boot_volume_image->reserved_sector_count *
+    boot_volume_image->bytes_per_sector;
+  return reinterpret_cast<uint32_t*>(
+      reinterpret_cast<uintptr_t>(boot_volume_image) + fat_offset);
+}
+
+/**
+ * @fn
+ * IsEndOfClusterchain関数
+ * @brief 
+ * 指定されたクラスタ番号がチェーンの末尾であるかチェックする
+ * @param cluster クラスタ番号
+ * @return true クラスタチェーンの末尾である
+ * @return false 末尾でない
+ */
+bool IsEndOfClusterchain(unsigned long cluster) {
+  return cluster >= 0x0ffffff8ul;
+}
+
+
+/**
+ * @fn
+ * ExtendCluster関数
+ * @brief 
+ * クラスターチェーンを延伸する
+ * @param eoc_cluster 拡張対象のクラスタ
+ * @param n 拡張するクラスタ数
+ * @return unsigned long 拡張した最後のクラスタ番号
+ */
+unsigned long ExtendCluster(unsigned long eoc_cluster, size_t n) {
+  // 引数で指定したクラスタのクラスターチェーンを辿って末尾まで移動
+  uint32_t* fat = GetFAT();
+  while (!IsEndOfClusterchain(fat[eoc_cluster])) {
+    eoc_cluster = fat[eoc_cluster];
+  }
+
+  size_t num_allocated = 0;
+  auto current = eoc_cluster;
+
+  // FATボリューム内の空きクラスタを集める
+  for (unsigned long candidate = 2; num_allocated < n; ++candidate) {
+    if (fat[candidate] != 0) {  // candidate cluster is not free
+      continue;
+    }
+    fat[current] = candidate;
+    current = candidate;
+    ++num_allocated;
+  }
+  fat[current] = kEndOfClusterchain;
+  return current;
+}
+
+/**
+ * @fn 
+ * AllocateEntry関数
+ * @brief 
+ * 引数で指定されたディレクトリ内の空きエントリを探して返す
+ * @param dir_cluster 検索対象のディレクトリのディレクトリエントリのクラスタ
+ * @return DirectoryEntry* 空きディレクトリエントリ
+ */
+DirectoryEntry* AllocateEntry(unsigned long dir_cluster) {
+  // 親ディレクトリのクラスタチェーンごとにループ
+  while (true) {
+    auto dir = GetSectorByCluster<DirectoryEntry>(dir_cluster);
+    for (int i = 0; i < bytes_per_cluster / sizeof(DirectoryEntry); ++i) {
+      if (dir[i].name[0] == 0 || dir[i].name[0] == 0xe5) {
+        // 0または0xe5のときは空き
+        return &dir[i];
+      }
+    }
+    auto next = NextCluster(dir_cluster);
+    if (next == kEndOfClusterchain) {
+      break;
+    }
+    dir_cluster = next;
+  }
+
+  // 空きがなかったら、拡張する。
+  dir_cluster = ExtendCluster(dir_cluster, 1);
+  auto dir = GetSectorByCluster<DirectoryEntry>(dir_cluster);
+  memset(dir, 0 , bytes_per_cluster);
+  return &dir[0];
+}
+
+/**
+ * @fn
+ * SetFileName関数
+ * @brief 
+ * 指定したエントリにファイル名を設定する
+ * @param entry ディレクトリエントリ
+ * @param name ファイル名
+ */
+void SetFileName(DirectoryEntry& entry, const char* name) {
+  const char* dot_pos = strrchr(name, '.');
+  // 書き込む文字列を一度スペースで初期化
+  memset(entry.name, ' ', 8+3);
+  if (dot_pos) {
+    // ドットを含む場合は、拡張子とそれ以外でそれぞれ書き込み
+    for (int i = 0; i < 8 && i < dot_pos - name; ++i) {
+      entry.name[i] = toupper(name[i]);
+    }
+
+    for (int i =0 ; i < 3 && i < dot_pos[i + 1]; ++i) {
+      entry.name[8 + i] = toupper(dot_pos[i + 1]);
+    }
+  } else {
+    // ドットを含まない場合は、8文字の方だけを書き込み
+    for (int i = 0; i < 8 && name[i]; ++i) {
+      entry.name[i] = toupper(name[i]);
+    }
+  }
+}
+
+/**
+ * @fn
+ * fat::CreateFile関数
+ * @brief Create a File object
+ * 新規ファイルのディレクトリエントリを作成する。
+ * @param path 作成するファイルのパス文字列
+ * @return WithError<DirectoryEntry*> 
+ */
+WithError<DirectoryEntry*> CreateFile(const char* path){
+  auto parent_dir_cluster = fat::boot_volume_image->root_cluster;
+  const char* filename = path;
+
+  // ファイル名と、格納ディレクトリに分割
+  if (const char* slash_pos = strrchr(path, '/')) {
+    filename = &slash_pos[1];
+    if (slash_pos[1] == '\0') {
+      return { nullptr, MAKE_ERROR(Error::kIsDirectory)};
+    }
+
+    char parent_dir_name[slash_pos - path + 1];
+    strncpy(parent_dir_name, path, slash_pos - path);
+    parent_dir_name[slash_pos - path] = '\0';
+
+    // 格納ディレクトリのディレクトリエントリを取得
+    if (parent_dir_name[0] != '\0') {
+      auto [ parent_dir, post_slash2 ] = fat::FindFile(parent_dir_name);
+      if (parent_dir == nullptr) {
+        return { nullptr, MAKE_ERROR(Error::kNoSuchEntry) };
+      }
+      parent_dir_cluster = parent_dir->FirstCluster();
+    }
+  }
+
+  auto dir = fat::AllocateEntry(parent_dir_cluster);
+  if (dir == nullptr) {
+    return { nullptr, MAKE_ERROR(Error::kNoEnoughMemory) };
+  }
+  fat::SetFileName(*dir, filename);
+  dir->file_size = 0;
+  return { dir, MAKE_ERROR(Error::kSuccess) };
+}
+
+/**
+ * @fn
  * LoadFile関数
  * 
  * @brief 
