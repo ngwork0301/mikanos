@@ -286,8 +286,6 @@ extern "C" void KernelMainNewStack(
   // キーボードの初期化
   InitializeKeyboard();
 
-  // ターミナルとタスクのマッピングを初期化
-  terminals = new std::map<uint64_t, Terminal*>;
   // ターミナル用タスクを生成して起床させる
   task_manager->NewTask()
     .InitContext(TaskTerminal, 0)

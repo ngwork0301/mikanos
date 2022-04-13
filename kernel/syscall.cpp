@@ -63,29 +63,30 @@ namespace syscall {
    * syscall::PutString関数
    * @brief
    * ターミナルに文字を描画する。
-   * @param [in] arg1 出力先ターミナルの番号
+   * @param [in] arg1 出力先ファイルディスクリプタの番号
    * @param [in] arg2 表示したい文字列
-   * @param [in] arg3 NUL文字をふくまないバイト数
+   * @param [in] arg3 NULL文字をふくまないバイト数
    * @return Result{ 描画した文字数, エラーコード }
    */
   SYSCALL(PutString) {
-    //! 第一引数：現状は、出力先ターミナルの番号
+    //! 第一引数：出力先ファイルディスクリプタの番号
     const auto fd = arg1;
     //! 第二引数：表示したい文字列へのポインタ
     const char* s = reinterpret_cast<const char*>(arg2);
-    //! 第三引数：NUL文字をふくまないバイト数
+    //! 第三引数：NULL文字をふくまないバイト数
     const auto len = arg3;
     if (len > 1024) {
       return { 0, E2BIG };
     }
 
-    if (fd == 1) {
-      // 現在のタスク＝アプリが実行されているタスクから、出力先のターミナルを探して出力
-      const auto task_id = task_manager->CurrentTask().ID();
-      (*terminals)[task_id]->Print(s, len);
-      return { len, 0 };
+    __asm__("cli");  // 割り込み禁止
+    auto& task = task_manager->CurrentTask();
+    __asm__("sti");  // 割り込み許可
+
+    if (fd < 0 || task.Files().size() <= fd || !task.Files()[fd]) {
+      return { 0, EBADF };
     }
-    return { 0, EBADF };
+    return { task.Files()[fd]->Write(s, len), 0 };
   }
 
   /**
@@ -402,6 +403,7 @@ namespace syscall {
     auto& task = task_manager->CurrentTask();
     __asm__("sti");  // 割り込み許可
 
+    Log(kWarn, "WANA: ReadFile called fd = %d\n", fd);
     if (fd < 0 || task.Files().size() <= fd || !task.Files()[fd]) {
       // 現在のタスクに指定されたファイルディスクリプターがみつからなかったらエラー
       return { 0, EBADF};

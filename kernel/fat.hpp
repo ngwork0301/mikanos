@@ -83,6 +83,7 @@ namespace fat{
     public:
       explicit FileDescriptor(DirectoryEntry& fat_entry);
       size_t Read(void* buf, size_t len) override;
+      size_t Write(const void* buf, size_t len) override;
 
     private:
       //! このファイルディスクリプタがさすファイルへの参照
@@ -91,8 +92,14 @@ namespace fat{
       size_t rd_off_ = 0;
       //! rd_off_が指す位置に対応するクラスタ番号
       unsigned long rd_cluster_ = 0;
-      //! クラスタ先頭からのオフセット（バイト単位）
+      //! 読み込みのクラスタ先頭からのオフセット（バイト単位）
       size_t rd_cluster_off_ = 0;
+      //! 書き込みオフセット（バイト単位）
+      size_t wr_off_ = 0;
+      //! wr_off_が指す位置に対応するクラスタ番号
+      unsigned long wr_cluster_ = 0;
+      //! 書き込みのクラスタ先頭からのオフセット（バイト単位）
+      size_t wr_cluster_off_ = 0;
   };
 
   
@@ -103,8 +110,9 @@ namespace fat{
   extern unsigned long bytes_per_cluster;
 
   void Initialize(void* volume_image);
-
   uintptr_t GetClusterAddr(unsigned long cluster);
+  unsigned long AllocateClusterChain(size_t n);
+
   /**
    * @brief Get the Sector By Cluster object
    * クラスタ番号をブロック先頭のポインタに変換する

@@ -21,7 +21,7 @@ extern "C" void main(int argc, char** argv) {
 
   char buf[256];
   size_t bytes = 0;
-  while((bytes == fread(buf, 1, sizeof(buf), fp_src)) > 0) {
+  while((bytes = fread(buf, 1, sizeof(buf), fp_src)) > 0) {
     const size_t written = fwrite(buf, 1, bytes, fp_dest);
     if (bytes != written) {
       printf("failed to write to %s\n", argv[2]);

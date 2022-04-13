@@ -950,9 +950,11 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
     return err;
   }
 
-  // 起動するアプリ側で使用できるように、このタスクのfd=0に標準入力を設定する
-  task.Files().push_back(
-      std::make_unique<TerminalFileDescriptor>(task, *this));
+  // 起動するアプリ側で使用できるように、このタスクの標準入力=0、標準出力=1、標準エラー出力=2を設定する
+  for (int i = 0; i < 3; ++i) {
+    task.Files().push_back(
+        std::make_unique<TerminalFileDescriptor>(task, *this));
+  }
 
   auto entry_addr = elf_header->e_entry;
   // CS/SSレジスタを切り替えて、ユーザセグメントとして実行
@@ -980,8 +982,8 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
  * TerminalFileDescriptor::TerminalFileDescriptorコンストラクタ
  * @brief Construct a new Terminal File Descriptor:: Terminal File Descriptor object
  * 
- * @param task 
- * @param term 
+ * @param task このファイルディスクリプタのタスク
+ * @param term このファイルディスクリプタのターミナルインスタンス
  */
 TerminalFileDescriptor::TerminalFileDescriptor(Task& task, Terminal& term)
     : task_{task}, term_{term} {
@@ -1031,11 +1033,18 @@ size_t TerminalFileDescriptor::Read(void* buf, size_t len) {
 }
 
 /**
+ * @fn
+ * TerminalFileDescriptor::Writeメソッド
  * @brief 
- * タスクIDとターミナルインスタンスの対応表
- * システムコールの呼び出し元タスクから表示するターミナルの特定などに使う
+ * ターミナルへ出力する
+ * @param buf 書き込む文字列
+ * @param len 書き込むバイト数
+ * @return size_t 書き込んだバイト数
  */
-std::map<uint64_t, Terminal*>* terminals;
+size_t TerminalFileDescriptor::Write(const void* buf, size_t len) {
+  term_.Print(reinterpret_cast<const char*>(buf), len);
+  return len;
+}
 
 /**
  * @fn
@@ -1060,7 +1069,6 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
     layer_task_map->insert(std::make_pair(terminal->LayerID(), task_id));
     active_layer->Activate(terminal->LayerID());
   }
-  (*terminals)[task_id] = terminal;
   __asm__("sti"); // 割り込みを許可
 
   // 引数に渡されたコマンドラインをターミナルに入力する

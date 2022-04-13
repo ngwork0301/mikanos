@@ -86,9 +86,147 @@ size_t FileDescriptor::Read(void* buf, size_t len) {
   }
 
   rd_off_ += total;
+  Log(kWarn, "WANA: Read returned total = %d\n", total);
   return total;
 }
 
+/**
+ * @fn
+ * GetFAT関数
+ * @brief 
+ * FATボリューム(32ビット値の配列)の先頭ポインタを取得する
+ * @return uint32_t* FATボリュームのアドレス
+ */
+uint32_t* GetFAT() {
+  uintptr_t fat_offset =
+    boot_volume_image->reserved_sector_count *
+    boot_volume_image->bytes_per_sector;
+  return reinterpret_cast<uint32_t*>(
+      reinterpret_cast<uintptr_t>(boot_volume_image) + fat_offset);
+}
+
+/**
+ * @fn
+ * IsEndOfClusterchain関数
+ * @brief 
+ * 指定されたクラスタ番号がチェーンの末尾であるかチェックする
+ * @param cluster クラスタ番号
+ * @return true クラスタチェーンの末尾である
+ * @return false 末尾でない
+ */
+bool IsEndOfClusterchain(unsigned long cluster) {
+  return cluster >= 0x0ffffff8ul;
+}
+
+/**
+ * @fn
+ * ExtendCluster関数
+ * @brief 
+ * クラスターチェーンを延伸する
+ * @param eoc_cluster 拡張対象のクラスタ
+ * @param n 拡張するクラスタ数
+ * @return unsigned long 拡張した最後のクラスタ番号
+ */
+unsigned long ExtendCluster(unsigned long eoc_cluster, size_t n) {
+  // 引数で指定したクラスタのクラスターチェーンを辿って末尾まで移動
+  uint32_t* fat = GetFAT();
+  while (!IsEndOfClusterchain(fat[eoc_cluster])) {
+    eoc_cluster = fat[eoc_cluster];
+  }
+
+  size_t num_allocated = 0;
+  auto current = eoc_cluster;
+
+  // FATボリューム内の空きクラスタを集める
+  for (unsigned long candidate = 2; num_allocated < n; ++candidate) {
+    if (fat[candidate] != 0) {  // candidate cluster is not free
+      continue;
+    }
+    fat[current] = candidate;
+    current = candidate;
+    ++num_allocated;
+  }
+  fat[current] = kEndOfClusterchain;
+  return current;
+}
+
+/**
+ * @fn
+ * AllocateClusterChain関数
+ * @brief 
+ * 指定された数の空きクラスタを確保する
+ * @param n クラスタ数
+ * @return unsigned long 確保した先頭クラスタ番号 
+ */
+unsigned long AllocateClusterChain(size_t n) {
+  uint32_t* fat = GetFAT();
+  unsigned long first_cluster;
+  for (first_cluster = 2; ; ++first_cluster) {
+    if (fat[first_cluster] == 0) {
+      fat[first_cluster] = kEndOfClusterchain;
+      break;
+    }
+  }
+
+  if (n > 1) {
+    ExtendCluster(first_cluster, n - 1);
+  }
+  return first_cluster;
+}
+
+/**
+ * @fn
+ * fat::FileDescriptor::Writeメソッド
+ * @brief 
+ * FATファイルシステム上のファイルへの書き込み
+ * @param buf 書き込み文字列
+ * @param len 書き込むバイト数
+ * @return size_t 書き込んだバイト数
+ */
+size_t FileDescriptor::Write(const void* buf, size_t len) {
+  // 指定されたバイト数書き込むのに必要なクラスタ数を算出するラムダ式
+  auto num_cluster = [](size_t bytes) {
+    return (bytes + bytes_per_cluster - 1) / bytes_per_cluster;
+  };
+
+  if (wr_cluster_ == 0) {
+    if (fat_entry_.FirstCluster() != 0) {
+      wr_cluster_ = fat_entry_.FirstCluster();
+    } else {
+      // 必要な数分のクラスターチェーンを確保
+      wr_cluster_ = AllocateClusterChain(num_cluster(len));
+      fat_entry_.first_cluster_low = wr_cluster_ & 0xffff;
+      fat_entry_.first_cluster_high = (wr_cluster_ >> 16) & 0xffff;
+    }
+  }
+
+  // 8バイトずつ書き込み
+  const uint8_t* buf8 = reinterpret_cast<const uint8_t*>(buf);
+
+  size_t total = 0;
+  while(total < len) {
+    if (wr_cluster_off_ == bytes_per_cluster) {
+      const auto next_cluster = NextCluster(wr_cluster_);
+      if (next_cluster == kEndOfClusterchain) {
+        wr_cluster_ = ExtendCluster(wr_cluster_, num_cluster(len - total));
+      } else {
+        wr_cluster_ = next_cluster;
+      }
+      wr_cluster_off_ = 0;
+    }
+
+    uint8_t* sec = GetSectorByCluster<uint8_t>(wr_cluster_);
+    size_t n = std::min(len, bytes_per_cluster - wr_cluster_off_);
+    memcpy(&sec[wr_cluster_off_], &buf8[total], n);
+    total += n;
+
+    wr_cluster_off_ += n;
+  }
+
+  wr_off_ += total;
+  fat_entry_.file_size = wr_off_;
+  return total;
+}
 
 /**
  * @fn
@@ -284,67 +422,6 @@ FindFile(const char* path, unsigned long directory_cluster){
 
   not_found:
     return { nullptr, post_slash };
-}
-
-/**
- * @fn
- * GetFAT関数
- * @brief 
- * FATボリューム(32ビット値の配列)の先頭ポインタを取得する
- * @return uint32_t* FATボリュームのアドレス
- */
-uint32_t* GetFAT() {
-  uintptr_t fat_offset =
-    boot_volume_image->reserved_sector_count *
-    boot_volume_image->bytes_per_sector;
-  return reinterpret_cast<uint32_t*>(
-      reinterpret_cast<uintptr_t>(boot_volume_image) + fat_offset);
-}
-
-/**
- * @fn
- * IsEndOfClusterchain関数
- * @brief 
- * 指定されたクラスタ番号がチェーンの末尾であるかチェックする
- * @param cluster クラスタ番号
- * @return true クラスタチェーンの末尾である
- * @return false 末尾でない
- */
-bool IsEndOfClusterchain(unsigned long cluster) {
-  return cluster >= 0x0ffffff8ul;
-}
-
-
-/**
- * @fn
- * ExtendCluster関数
- * @brief 
- * クラスターチェーンを延伸する
- * @param eoc_cluster 拡張対象のクラスタ
- * @param n 拡張するクラスタ数
- * @return unsigned long 拡張した最後のクラスタ番号
- */
-unsigned long ExtendCluster(unsigned long eoc_cluster, size_t n) {
-  // 引数で指定したクラスタのクラスターチェーンを辿って末尾まで移動
-  uint32_t* fat = GetFAT();
-  while (!IsEndOfClusterchain(fat[eoc_cluster])) {
-    eoc_cluster = fat[eoc_cluster];
-  }
-
-  size_t num_allocated = 0;
-  auto current = eoc_cluster;
-
-  // FATボリューム内の空きクラスタを集める
-  for (unsigned long candidate = 2; num_allocated < n; ++candidate) {
-    if (fat[candidate] != 0) {  // candidate cluster is not free
-      continue;
-    }
-    fat[current] = candidate;
-    current = candidate;
-    ++num_allocated;
-  }
-  fat[current] = kEndOfClusterchain;
-  return current;
 }
 
 /**
