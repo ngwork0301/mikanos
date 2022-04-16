@@ -10,6 +10,7 @@
 #include "asmfunc.h"
 #include "font.hpp"
 #include "graphics.hpp"
+#include "paging.hpp"
 #include "segment.hpp"
 #include "task.hpp"
 #include "timer.hpp"
@@ -147,6 +148,27 @@ void KillApp(InterruptFrame* frame) {
   ExitApp(task.OSStackPointer(), 128 + SIGSEGV);
 }
 
+  /**
+   * @fn
+   * IntHandlerPF関数
+   * @brief 
+   * ページングフォルト例外が発生したときのハンドラ実装
+   * @param [in] frame フレーム
+   * @param [in] error_code エラーコード
+   */
+  __attribute__((interrupt))
+  void IntHandlerPF(InterruptFrame* frame, uint64_t error_code) {
+    uint64_t cr2 = GetCR2();
+    if (auto err = HandlePageFault(error_code, cr2); !err) {
+      return;
+    }
+    KillApp(frame);
+    PrintFrame(frame, "#PF");
+    WriteString(*screen_writer, {500, 16*4}, "ERR", {0, 0, 0});
+    PrintHex(error_code, 16, {500 + 8+4, 16*4});
+    while (true) __asm__("hlt");
+  }
+
 #define FaultHandlerWithError(fault_name) \
   __attribute__((interrupt)) \
   void IntHandler ## fault_name (InterruptFrame* frame, uint64_t error_code) { \
@@ -182,7 +204,7 @@ FaultHandlerWithError(TS)    // Interrupt 10—Invalid TSS Exception (#TS)
 FaultHandlerWithError(NP)    // Interrupt 11—Segment Not Present (#NP)
 FaultHandlerWithError(SS)    // Interrupt 12—Stack Fault Exception (#SS)
 FaultHandlerWithError(GP)    // Interrupt 13—General Protection Exception (#GP)
-FaultHandlerWithError(PF)    // Interrupt 14—Page-Fault Exception (#PF)
+// FaultHandlerWithError(PF)    // Interrupt 14—Page-Fault Exception (#PF)
 FaultHandlerNoError(MF)      // Interrupt 16—x87 FPU Floating-Point Error (#MF)
 FaultHandlerWithError(AC)    // Interrupt 17—Alignment Check Exception (#AC)
 FaultHandlerNoError(MC)      // Interrupt 18—Machine-Check Exception (#MC)

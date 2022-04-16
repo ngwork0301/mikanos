@@ -98,63 +98,6 @@ namespace {
 
 /**
  * @fn
- * CleanPageMap関数
- * @brief 
- * 指定されたページング構造のエントリをすべて削除する
- * @param page_map 削除するページング構造
- * @param page_map_level ページング構造の階層レベル
- * @return Error 
- */
-Error CleanPageMap(PageMapEntry* page_map, int page_map_level) {
-  for (int i = 0; i < 512; ++i) {
-    auto entry = page_map[i];
-    // presentフラグが立ってない場合は、確保されていないのでスキップ
-    if (!entry.bits.present) {
-      continue;
-    }
-
-    if (page_map_level > 1) {
-      // 再帰呼び出し
-      if (auto err = CleanPageMap(entry.Pointer(), page_map_level - 1)) {
-        return err;
-      }
-    }
-
-    const auto entry_addr = reinterpret_cast<uintptr_t>(entry.Pointer());
-    const FrameID map_frame{entry_addr / kBytesPerFrame};
-    if (auto err = memory_manager->Free(map_frame, 1)) {
-      return err;
-    }
-    page_map[i].data = 0;
-  }
-  return MAKE_ERROR(Error::kSuccess);
-}
-
-/**
- * @fn
- * CleanPageMaps関数
- * 
- * @brief 
- * アプリ用のページング構造を破棄する
- * PML4テーブルには、1つしかエントリがないことが前提のため注意
- * @param addr PML4のページング構造
- * @return Error 
- */
-Error CleanPageMaps(LinearAddress4Level addr) {
-  auto pml4_table = reinterpret_cast<PageMapEntry*>(GetCR3());
-  auto pdp_table = pml4_table[addr.parts.pml4].Pointer();
-  pml4_table[addr.parts.pml4].data = 0;
-  if (auto err = CleanPageMap(pdp_table, 3)) {
-    return err;
-  }
-
-  const auto pdp_addr = reinterpret_cast<uintptr_t>(pdp_table);
-  const FrameID pdp_frame{pdp_addr / kBytesPerFrame};
-  return memory_manager->Free(pdp_frame, 1);
-}
-
-/**
- * @fn
  * GetProgramHeader関数
  * @brief Get the Program Header object
  * ELFヘッダからプログラムヘッダを読み取ってそのアドレスを返す
@@ -188,132 +131,17 @@ uintptr_t GetFirstLoadAddress(Elf64_Ehdr* ehdr) {
 
 /**
  * @fn
- * NewPageMap
- * 
- * @brief 
- * 階層ページング構造の仮想アドレスと物理アドレスのマッピングを新たに作成する
- * 使用しおわったら必ず解放すること
- * @return WithError<PageMapEntry*> 
- */
-WithError<PageMapEntry*> NewPageMap() {
-  auto frame = memory_manager->Allocate(1);
-  if (frame.error) {
-    return { nullptr, frame.error };
-  }
-
-  auto e = reinterpret_cast<PageMapEntry*>(frame.value.Frame());
-  memset(e, 0, sizeof(uint64_t) * 512);
-  return { e, MAKE_ERROR(Error::kSuccess) };
-}
-
-/**
- * @fn
- * SetNewPageMapIfNotPresent関数
- * @brief Set the New Map If Not Present object
- * 必要に応じて新たなページング構造を生成して設定する
- * @param entry エントリインデックス
- * @return WithError<PageMapEntry*> 
- */
-WithError<PageMapEntry*> SetNewPageMapIfNotPresent(PageMapEntry& entry) {
-  // エントリのpresentフラグが1であれば、すでにこのエントリは設定済みとして何もせず終了
-  if (entry.bits.present) {
-    return { entry.Pointer(), MAKE_ERROR(Error::kSuccess) };
-  }
-
-  // 新しいページング構造を生成
-  auto [ child_map, err ] = NewPageMap();
-  if (err) {
-    return { nullptr, err };
-  }
-
-  // 生成したページング構造をエントリのaddrフィールドに設定
-  entry.SetPointer(child_map);
-  entry.bits.present = 1;
-
-  return { child_map, MAKE_ERROR(Error::kSuccess)};
-}
-
-/**
- * @fn
- * SetupPageMap関数
- * 
- * @brief 
- * 指定された階層のページング設定をする
- * @param page_map その階層のページング構造の」物理アドレス
- * @param page_map_level 階層レベル
- * @param addr LOADセグメントの仮想アドレス
- * @param num_4kpages LOADセグメントの残りページ数
- * @return WithError<size_t> 未処理のページとエラー
- */
-WithError<size_t> SetupPageMap(
-    PageMapEntry* page_map, int page_map_level, LinearAddress4Level addr, size_t num_4kpages) {
-  // すべてのページを処理しきるまでループ
-  while (num_4kpages > 0) {
-    // 仮想アドレスから、その階層のどのエントリに属するかを取得
-    const auto entry_index = addr.Part(page_map_level);
-
-    // 下位の階層の物理アドレスを取得
-    auto [ child_map, err ] = SetNewPageMapIfNotPresent(page_map[entry_index]);
-    if (err) {
-      return { num_4kpages, err };
-    }
-    // 書き込み可能フラグを1にする
-    page_map[entry_index].bits.writable = 1;
-    // userフラグを1にする
-    page_map[entry_index].bits.user = 1;
-
-    if (page_map_level == 1) {
-      --num_4kpages;
-    } else {
-      // ひとつ下位の階層ページング構造を再帰的に設定
-      auto [ num_remain_pages, err ] =
-        SetupPageMap(child_map, page_map_level -1, addr, num_4kpages);
-      if (err) {
-        return { num_4kpages, err };
-      }
-      num_4kpages = num_remain_pages;
-    }
-
-    if (entry_index == 511) {
-      break;
-    }
-
-    // 残りを次のエントリに設定
-    addr.SetPart(page_map_level, entry_index+1);
-    for (int level = page_map_level - 1; level >= 1; --level) {
-      // 下位のエントリにすべて0を設定
-      addr.SetPart(level, 0);
-    }
-  }
-  return { num_4kpages, MAKE_ERROR(Error::kSuccess) };
-}
-
-/**
- * @fn
- * SetupPageMaps関数
- * @brief 
- * 階層ページング構造全体を設定する
- * @param addr LOADセグメントの先頭アドレス
- * @param num_4kpages LOADセグメントのページ数
- * @return Error 
- */
-Error SetupPageMaps(LinearAddress4Level addr, size_t num_4kpages) {
-  // CR3レジスタから階層ページング構造の最上位PML4の物理アドレスを取得
-  auto pml4_table = reinterpret_cast<PageMapEntry*>(GetCR3());
-  return SetupPageMap(pml4_table, 4, addr, num_4kpages).error;
-}
-
-/**
- * @fn
  * CopyLoadSegments関数
  * 
  * @brief 
  * LOADセグメントを、階層ページング構造を作成して最終目的地にコピーする
  * @param ehdr ELFへのポインタ
- * @return Error 
+ * @return WithError 
  */
-Error CopyLoadSegments(Elf64_Ehdr* ehdr) {
+WithError<uint64_t> CopyLoadSegments(Elf64_Ehdr* ehdr) {
   auto phdr = GetProgramHeader(ehdr);
+  //! LOADセグメントの末尾アドレス
+  uint64_t last_addr = 0;
   for (int i = 0; i < ehdr->e_phnum; ++i) {
     // プログラムヘッダごとにループ
     if (phdr[i].p_type != PT_LOAD) continue;
@@ -321,11 +149,12 @@ Error CopyLoadSegments(Elf64_Ehdr* ehdr) {
     // PML4のコピー先アドレス
     LinearAddress4Level dest_addr;
     dest_addr.value = phdr[i].p_vaddr;
+    last_addr = std::max(last_addr, phdr[i].p_vaddr + phdr[i].p_memsz);
     const auto num_4kpages = (phdr[i].p_memsz + 4095) / 4096;
 
     // 階層ページング構造を設定
     if (auto err = SetupPageMaps(dest_addr, num_4kpages)) {
-      return err;
+      return { last_addr, err };
     }
 
     // 物理メモリ領域にコピー
@@ -335,7 +164,7 @@ Error CopyLoadSegments(Elf64_Ehdr* ehdr) {
     // ファイルサイズとメモリサイズの差分も0で初期化して確保
     memset(dst + phdr[i].p_filesz, 0, phdr[i].p_memsz - phdr[i].p_filesz);
   }
-  return MAKE_ERROR(Error::kSuccess);
+  return { last_addr, MAKE_ERROR(Error::kSuccess) };
 }
 
 /**
@@ -345,26 +174,22 @@ Error CopyLoadSegments(Elf64_Ehdr* ehdr) {
  * @brief 
  * ELFファイル内のLOADセグメントを階層ページング構造を作成してメモリに配置する
  * @param ehdr ELFヘッダへのポインタ
- * @return Error 
+ * @return WithError { LOADセグメントの末尾アドレス }
  */
-Error LoadELF(Elf64_Ehdr* ehdr) {
+WithError<uint64_t> LoadELF(Elf64_Ehdr* ehdr) {
   // 実行形式ではない場合、フォーマットエラーとする
   if (ehdr->e_type != ET_EXEC) {
-    return MAKE_ERROR(Error::kInvalidFormat);
+    return { 0, MAKE_ERROR(Error::kInvalidFormat) };
   }
 
   // LOADセグメントを探して、後半の仮想アドレスでなければ、フォーマットエラーとする
   const auto addr_first = GetFirstLoadAddress(ehdr);
   if (addr_first < 0xffff'8000'0000'0000) {
-    return MAKE_ERROR(Error::kInvalidFormat);
+    return { 0, MAKE_ERROR(Error::kInvalidFormat) };
   }
 
   // LOADセグメントのコピー
-  if (auto err = CopyLoadSegments(ehdr)) {
-    return err;
-  }
-
-  return MAKE_ERROR(Error::kSuccess);
+  return CopyLoadSegments(ehdr);
 }
 
 /**
@@ -887,8 +712,7 @@ Error FreePML4(Task& current_task) {
   current_task.Context().cr3 = 0;
   ResetCR3();
 
-  const FrameID frame{cr3 / kBytesPerFrame};
-  return memory_manager->Free(frame, 1);
+  return FreePageMap(reinterpret_cast<PageMapEntry*>(cr3));
 }
 
 /**
@@ -924,8 +748,9 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
     return pml4.error;
   }
 
-  if (auto err = LoadELF(elf_header)) {
-    return err;
+  const auto [ elf_last_addr, elf_err ] = LoadELF(elf_header);
+  if (elf_err) {
+    return elf_err;
   }
 
   // 引数用のメモリ領域を確保
@@ -955,6 +780,13 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
     task.Files().push_back(
         std::make_unique<TerminalFileDescriptor>(task, *this));
   }
+
+  // デマンドページングのアドレス範囲の初期値を設定する。
+  // 4KiB単位で切り上げ
+  const uint64_t elf_next_page = 
+      (elf_last_addr + 4095) & 0xffff'ffff'ffff'f000;
+  task.SetDPagingBegin(elf_next_page);
+  task.SetDPagingEnd(elf_next_page);
 
   auto entry_addr = elf_header->e_entry;
   // CS/SSレジスタを切り替えて、ユーザセグメントとして実行

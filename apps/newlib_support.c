@@ -27,11 +27,30 @@ void _exit(int status) {
  * @return caddr_t 
  */
 caddr_t sbrk(int incr) {
-  static uint8_t heap[4096];
-  static int i = 0;
-  int prev = i;
-  i += incr;
-  return (caddr_t)&heap[prev];
+  // デマンドページングをつかってメモリを確保する
+  static uint64_t dpage_end = 0;
+  static uint64_t program_break = 0;
+
+  if (dpage_end == 0 || dpage_end < program_break + incr) {
+    int num_pages = (incr + 4095) / 4096;
+    struct SyscallResult res = SyscallDemandPages(num_pages, 0);
+    if (res.error) {
+      errno = ENOMEM;
+      return (caddr_t)-1;
+    }
+    program_break = res.value;
+    dpage_end = res.value + 4096 * num_pages;
+  }
+  const uint64_t prev_break = program_break;
+  program_break += incr;
+  return (caddr_t)prev_break;
+
+  // 以下はもともとの実装。足りなくなったら4KiB分ずつ確保する
+  // static uint8_t heap[4096];
+  // static int i = 0;
+  // int prev = i;
+  // i += incr;
+  // return (caddr_t)&heap[prev];
 }
 
 int getpid(void) {

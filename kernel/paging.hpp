@@ -9,15 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 
-/** @brief 静的に確保するページディレクトリの個数
- *
- * この定数は SetupIdentityPageMap で使用される．
- * 1 つのページディレクトリには 512 個の 2MiB ページを設定できるので，
- * kPageDirectoryCount x 1GiB の仮想アドレスがマッピングされることになる．
- */
-const size_t kPageDirectoryCount = 64;
-
-void ResetCR3();
+#include "error.hpp"
 
 union PageMapEntry {
   uint64_t data;
@@ -46,10 +38,6 @@ union PageMapEntry {
     bits.addr = reinterpret_cast<uint64_t>(p) >> 12;
   }
 };
-
-void SetupIdentityPageTable();
-
-void InitializePaging();
 
 union LinearAddress4Level {
   uint64_t value;
@@ -100,3 +88,20 @@ union LinearAddress4Level {
     }
   }
 };
+
+/** @brief 静的に確保するページディレクトリの個数
+ *
+ * この定数は SetupIdentityPageMap で使用される．
+ * 1 つのページディレクトリには 512 個の 2MiB ページを設定できるので，
+ * kPageDirectoryCount x 1GiB の仮想アドレスがマッピングされることになる．
+ */
+const size_t kPageDirectoryCount = 64;
+
+void ResetCR3();
+void SetupIdentityPageTable();
+WithError<PageMapEntry*> NewPageMap();
+Error FreePageMap(PageMapEntry* table);
+Error SetupPageMaps(LinearAddress4Level addr, size_t num_4kpages);
+Error CleanPageMaps(LinearAddress4Level addr);
+Error HandlePageFault(uint64_t error_page, uint64_t causal_addr);
+void InitializePaging();

@@ -173,6 +173,50 @@ std::optional<Message> Task::ReceiveMessage() {
 
 /**
  * @fn
+ * Task::DPagingBeginメソッド
+ * @brief 
+ * デマンドページングのアドレス範囲の開始位置を取得する
+ * @return uint64_t デマンドページングのアドレス範囲の開始位置
+ */
+uint64_t Task::DPagingBegin() const {
+  return dpaging_begin_;
+}
+
+/**
+ * @fn
+ * Task::SetDPagingBeginメソッド
+ * @brief 
+ * デマンドページングのアドレス範囲の開始位置を設定する
+ * @param v デマンドページングのアドレス範囲の開始位置
+ */
+void Task::SetDPagingBegin(uint64_t v) {
+  dpaging_begin_ = v;
+}
+
+/**
+ * @fn
+ * Task::DPagingEndメソッド
+ * @brief 
+ * デマンドページングのアドレス範囲の終了位置を取得する
+ * @return uint64_t デマンドページングのアドレス範囲の終了位置
+ */
+uint64_t Task::DPagingEnd() const {
+  return dpaging_end_;
+}
+
+/**
+ * @fn
+ * Task::DSetDPagingEndメソッド
+ * @brief 
+ * デマンドページングのアドレス範囲の終了位置を設定する
+ * @param v デマンドページングのアドレス範囲の終了位置
+ */
+void Task::SetDPagingEnd(uint64_t v) {
+  dpaging_end_ = v;
+}
+
+/**
+ * @fn
  * TaskManager::TaskManagerコンストラクタ
  * @brief Construct a new Task Manager:: Task Manager object
  */

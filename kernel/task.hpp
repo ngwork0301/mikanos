@@ -60,6 +60,11 @@ class Task {
     bool Running() { return running_; }
     unsigned int Level() { return level_; }
     std::vector<std::unique_ptr<FileDescriptor>>& Files(){ return files_; };
+
+    uint64_t DPagingBegin() const;
+    void SetDPagingBegin(uint64_t v);
+    uint64_t DPagingEnd() const;
+    void SetDPagingEnd(uint64_t v);
   
   private:
     //! タスクID
@@ -78,6 +83,8 @@ class Task {
     bool running_{false};
     //! このタスクがひらくファイルのファイルディスクリプタ配列
     std::vector< std::unique_ptr<FileDescriptor> > files_{};
+    //! デマンドページングのアドレス範囲の開始位置、終了位置
+    uint64_t dpaging_begin_{0}, dpaging_end_{0};
 
     Task& SetLevel(int level) { level_ = level; return *this; }
     Task& SetRunning(bool running) { running_ = running; return *this; }
