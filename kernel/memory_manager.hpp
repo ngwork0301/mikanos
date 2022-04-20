@@ -40,6 +40,17 @@ class FrameID {
     size_t id_;
 };
 
+/**
+ * @struct
+ * MemoryStat構造体
+ * @brief 
+ * メモリの統計情報を入れる構造体
+ */
+struct MemoryStat {
+  size_t allocated_frames;
+  size_t total_frames;
+};
+
 //! 未定義のページフレーム番号
 static const FrameID kNullFrame{std::numeric_limits<size_t>::max()};
 
@@ -71,6 +82,8 @@ class BitmapMemoryManager {
     void MarkAllocated(FrameID start_frame, size_t num_frames);
 
     void SetMemoryRange(FrameID range_begin, FrameID range_end);
+
+    MemoryStat Stat() const;
 
   private:
     /** 1ページフレームを1ビットで表したビットマップ */
