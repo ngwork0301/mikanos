@@ -431,6 +431,41 @@ namespace syscall {
     return { dp_end, 0 };
   }
 
+  /**
+   * @fn
+   * MapFile関数
+   * @brief 
+   * メモリマップトファイルのファイルマッピングを登録する
+   * @param [in] arg1 ファイルディスクリプタ
+   * @param [out] arg2 ファイルサイズへのポインタ
+   * @param [in] arg3 フラグ
+   * @return { ファイルの内容をマップしたメモリ領域へのアドレス, エラー }
+   */
+  SYSCALL(MapFile) {
+    const int fd = arg1;
+    size_t* file_size = reinterpret_cast<size_t*>(arg2);
+    // const int flags = arg3;
+    __asm__("cli"); // 割り込み禁止
+    auto& task = task_manager->CurrentTask();
+    __asm__("sti"); // 割り込み許可
+
+    if (fd < 0 || task.Files().size() <= fd || !task.Files()[fd]) {
+      // 不正なファイルのファイルディスクリプタがされたときはエラー
+      return { 0, EBADF };
+    }
+
+    // 第２引数で指定したアドレスに、マップしたファイルのサイズを入れる
+    *file_size = task.Files()[fd]->Size();
+    const uint64_t vaddr_end = task.FileMapEnd();
+    // 先頭位置を1ページ(4KiB)単位で揃える
+    const uint64_t vaddr_begin = (vaddr_end - *file_size) & 0xffff'ffff'ffff'f000;
+    // 末尾のアドレスを更新
+    task.SetFileMapEnd(vaddr_begin);
+    // ファイルマップを追加(実際の物理メモリ確保は、ページフォルトが発生したときにやる：遅延処理)
+    task.FileMaps().push_back(FileMapping{fd, vaddr_begin, vaddr_end});
+    return { vaddr_begin, 0 };
+  }
+
   namespace {
     /**
      * @fn
@@ -603,7 +638,7 @@ namespace syscall {
 
 using SyscallFuncType = syscall::Result (uint64_t, uint64_t, uint64_t,
                                  uint64_t, uint64_t, uint64_t);
-extern "C" std::array<SyscallFuncType*, 15> syscall_table{
+extern "C" std::array<SyscallFuncType*, 16> syscall_table{
   /* 0x00 */ syscall::LogString,
   /* 0x01 */ syscall::PutString,
   /* 0x02 */ syscall::Exit,
@@ -619,6 +654,7 @@ extern "C" std::array<SyscallFuncType*, 15> syscall_table{
   /* 0x0c */ syscall::OpenFile,
   /* 0x0d */ syscall::ReadFile,
   /* 0x0e */ syscall::DemandPages,
+  /* 0x0f */ syscall::MapFile,
 };
 
 void InitializeSyscall() {

@@ -229,6 +229,31 @@ size_t FileDescriptor::Write(const void* buf, size_t len) {
 
 /**
  * @fn
+ * FileDescriptor::Loadメソッド
+ * @brief 
+ * 指定した位置からファイル内容を読む
+ * @param [out] buf 読みだしたデータの書き込み先 
+ * @param [in] len 読み出すバイト数 
+ * @param [in] offset 読み出すデータの先頭クラスタからのオフセット
+ * @return size_t 読みだしたデータのバイト数
+ */
+size_t FileDescriptor::Load(void* buf, size_t len, size_t offset) {
+  FileDescriptor fd{fat_entry_};
+  fd.rd_off_ = offset;
+
+  unsigned long cluster = fat_entry_.FirstCluster();
+  while (offset >= bytes_per_cluster) {
+    offset -= bytes_per_cluster;
+    cluster = NextCluster(cluster);
+  }
+
+  fd.rd_cluster_ = cluster;
+  fd.rd_cluster_off_ = offset;
+  return fd.Read(buf, len);
+}
+
+/**
+ * @fn
  * fat::Initialize関数
  * @brief 
  * FATボリュームの初期化をおこなう。
@@ -537,30 +562,8 @@ WithError<DirectoryEntry*> CreateFile(const char* path){
  * @param entry 読み込むファイルのファイルエントリ
  * @return size_t 読み込んだサイズ
  */
-size_t LoadFile(void* buf, size_t len, const DirectoryEntry& entry){
-  auto is_valid_cluster = [](uint32_t c) {
-    return c != 0 && c != fat::kEndOfClusterchain;
-  };
-  auto cluster = entry.FirstCluster();
-
-  const auto buf_uint8 = reinterpret_cast<uint8_t*>(buf);
-  const auto buf_end = buf_uint8 + len;
-  auto p = buf_uint8;
-
-  while (is_valid_cluster(cluster)) {
-    // 残りサイズがクラスタのサイズよりも小さい場合は、必要な分だけをコピー
-    if (bytes_per_cluster >= buf_end - p) {
-      memcpy(p, GetSectorByCluster<uint8_t>(cluster), buf_end - p);
-      return len;
-    }
-    // 残りサイズがそのクラスタのサイズ以上であれば、全部コピー
-    memcpy(p, GetSectorByCluster<uint8_t>(cluster), bytes_per_cluster);
-    p += bytes_per_cluster;
-    cluster = NextCluster(cluster);
-  }
-  return p - buf_uint8;
+size_t LoadFile(void* buf, size_t len, DirectoryEntry& entry){
+  return FileDescriptor{entry}.Read(buf, len);
 }
-
-
 
 } // namespace

@@ -725,7 +725,7 @@ Error FreePML4(Task& current_task) {
  * @param [in] command コマンド
  * @param [in] first_arg 第一引数
  */
-Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command, char* first_arg){
+Error Terminal::ExecuteFile(fat::DirectoryEntry& file_entry, char* command, char* first_arg){
   std::vector<uint8_t> file_buf(file_entry.file_size);
   fat::LoadFile(&file_buf[0], file_buf.size(), file_entry);
 
@@ -733,6 +733,8 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
   auto elf_header = reinterpret_cast<Elf64_Ehdr*>(&file_buf[0]);
   if (memcmp(elf_header->e_ident, "\x7f" "ELF", 4) != 0) {
     // ELF形式でない場合は、ファイルエントリをそのまま関数としてキャストして呼び出す
+    // ※ CPL=0のまま実行すると、CPU例外発生時の強制終了によるOS復帰ができないので、
+    //   フラットバイナリ形式は非サポートにした。
     // using Func = void ();
     // auto f = reinterpret_cast<Func*>(&file_buf[0]);
     // f();
@@ -788,6 +790,9 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
   task.SetDPagingBegin(elf_next_page);
   task.SetDPagingEnd(elf_next_page);
 
+  // メモリマップトファイル（ファイルキャッシュ）を設定する(末尾から使用する)
+  task.SetFileMapEnd(0xffff'ffff'ffff'e000);
+
   auto entry_addr = elf_header->e_entry;
   // CS/SSレジスタを切り替えて、ユーザセグメントとして実行
   int ret = CallApp(argc.value, argv, 3 << 3 | 3, entry_addr,
@@ -795,6 +800,8 @@ Error Terminal::ExecuteFile(const fat::DirectoryEntry& file_entry, char* command
       &task.OSStackPointer());
   // アプリ側が使用する不ァイルディスクリプタをクリア
   task.Files().clear();
+  // アプリ側が使用するファイルキャッシュをクリア
+  task.FileMaps().clear();
 
   char s[64];
   sprintf(s, "app exited. ret = %d\n", ret);
@@ -876,6 +883,20 @@ size_t TerminalFileDescriptor::Read(void* buf, size_t len) {
 size_t TerminalFileDescriptor::Write(const void* buf, size_t len) {
   term_.Print(reinterpret_cast<const char*>(buf), len);
   return len;
+}
+
+/**
+ * @fn
+ * 
+ * @brief 
+ * 
+ * @param buf 
+ * @param offset 
+ * @param len 
+ * @return size_t 
+ */
+size_t TerminalFileDescriptor::Load(void* buf, size_t offset, size_t len) {
+  return 0;
 }
 
 /**

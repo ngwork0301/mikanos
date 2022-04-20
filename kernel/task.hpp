@@ -33,6 +33,19 @@ struct TaskContext {
 
 using TaskFunc = void (uint64_t, int64_t);
 
+/**
+ * @struct
+ * FileMapping構造体
+ * @brief 
+ * アプリ固有のファイルマッピングを表現する構造体
+ */
+struct FileMapping {
+  //! ファイルディスクリプタ
+  int fd;
+  //! 物理メモリの開始アドレス、終了アドレス
+  uint64_t vaddr_begin, vaddr_end;
+};
+
 class TaskManager;
 
 /**
@@ -65,7 +78,10 @@ class Task {
     void SetDPagingBegin(uint64_t v);
     uint64_t DPagingEnd() const;
     void SetDPagingEnd(uint64_t v);
-  
+    uint64_t FileMapEnd() const;
+    void SetFileMapEnd(uint64_t v);
+    std::vector<FileMapping>& FileMaps();
+
   private:
     //! タスクID
     uint64_t id_;
@@ -85,6 +101,10 @@ class Task {
     std::vector< std::unique_ptr<FileDescriptor> > files_{};
     //! デマンドページングのアドレス範囲の開始位置、終了位置
     uint64_t dpaging_begin_{0}, dpaging_end_{0};
+    //! ファイルマッピングの終了アドレス
+    uint64_t file_map_end_{0};
+    //! ファイルマッピング
+    std::vector<FileMapping> file_maps_{0};
 
     Task& SetLevel(int level) { level_ = level; return *this; }
     Task& SetRunning(bool running) { running_ = running; return *this; }

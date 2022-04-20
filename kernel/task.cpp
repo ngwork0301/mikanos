@@ -217,6 +217,39 @@ void Task::SetDPagingEnd(uint64_t v) {
 
 /**
  * @fn
+ * Task::FileMapEndメソッド
+ * @brief 
+ * ファイルマップの終了アドレスを取得する
+ * @return uint64_t 
+ */
+uint64_t Task::FileMapEnd() const {
+  return file_map_end_;
+}
+
+/**
+ * @fn
+ * Task::SetFileMapEndメソッド
+ * @brief 
+ * ファイルマップの終了アドレスを設定する
+ * @param v 
+ */
+void Task::SetFileMapEnd(uint64_t v) {
+  file_map_end_ = v;
+}
+
+/**
+ * @fn
+ * Task::FileMapsメソッド
+ * @brief 
+ * ファイルマップを取得する
+ * @return std::vector<FileMapping>& 
+ */
+std::vector<FileMapping>& Task::FileMaps() {
+  return file_maps_;
+}
+
+/**
+ * @fn
  * TaskManager::TaskManagerコンストラクタ
  * @brief Construct a new Task Manager:: Task Manager object
  */
