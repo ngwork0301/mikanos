@@ -10,9 +10,10 @@
 #include <optional>
 #include "fat.hpp"
 #include "file.hpp"
-#include "window.hpp"
-#include "task.hpp"
 #include "layer.hpp"
+#include "paging.hpp"
+#include "task.hpp"
+#include "window.hpp"
 
 class Terminal {
   public:
@@ -76,5 +77,20 @@ class TerminalFileDescriptor : public FileDescriptor {
     Task& task_;
     Terminal& term_;
 };
+
+/**
+ * @struct 
+ * AppLoadInfo構造体
+ * @brief 
+ * アプリをロードした後の状態情報
+ */
+struct AppLoadInfo {
+  //! アプリのLOADセグメントの最終アドレス、エントリポイントのアドレス
+  uint64_t vaddr_end, entry;
+  //! 階層ページング構造
+  PageMapEntry* pml4;
+};
+
+extern std::map<fat::DirectoryEntry*, AppLoadInfo>* app_loads;
 
 void TaskTerminal(uint64_t task_id, int64_t data);

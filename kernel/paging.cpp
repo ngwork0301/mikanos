@@ -3,6 +3,7 @@
 #include <array>
 
 #include "asmfunc.h"
+#include "logger.hpp"
 #include "memory_manager.hpp"
 #include "task.hpp"
 
@@ -50,6 +51,9 @@ void SetupIdentityPageTable() {
   }
   // PML4（ページマップレベル4テーブル）の物理アドレスをCR3レジスタに設定
   ResetCR3();
+  // スーパーバイザーによる読み込み専用ページへの書き込みを許可
+  // ※コピーオンライトの実現のため、CPL=3のメモリ領域は基本すべて読み込み専用
+  SetCR0(GetCR0() & 0xfffeffff);   // Clear WP
 }
 
 /**
@@ -97,6 +101,52 @@ Error PreparePageCache(FileDescriptor& fd, const FileMapping& m,
 
 /**
  * @fn
+ * SetPageContent関数
+ * @brief Set the Page Content object
+ * 物理フレームを書き込み可能でマップする
+ * @param table 置き換え前のPageMapEntry
+ * @param part 階層レベル
+ * @param addr マップ対象の新ページのPageMapEntry
+ * @param content マップ対象の物理新ページ 
+ * @return Error 
+ */
+Error SetPageContent(PageMapEntry* table, int part,
+                     LinearAddress4Level addr, PageMapEntry* content) {
+  if (part == 1) {
+    // 最下層PDのとき、新ページを書き込み可能にしてマップ
+    const auto i = addr.Part(part);
+    table[i].SetPointer(content);
+    table[i].bits.writable = 1;
+    InvalidateTLB(addr.value);
+    return MAKE_ERROR(Error::kSuccess);
+  }
+
+  const auto i = addr.Part(part);
+  // 再帰的に最下層までページマップエントリの設定を呼び出す
+  return SetPageContent(table[i].Pointer(), part - 1, addr, content);
+}
+
+/**
+ * @fn
+ * CopyOnePage関数
+ * @brief 
+ * 4KiB ページをコピーして書き込み可能にしてマップする
+ * @param causal_addr ページフォルトしたアドレス
+ * @return Error 
+ */
+Error CopyOnePage(uint64_t causal_addr) {
+  auto [ p, err ] = NewPageMap();
+  if (err) {
+    return err;
+  }
+  const auto aligned_addr = causal_addr & 0xffff'ffff'ffff'f000;
+  memcpy(p, reinterpret_cast<const void*>(aligned_addr), 4096);
+  return SetPageContent(reinterpret_cast<PageMapEntry*>(GetCR3()), 4,
+                        LinearAddress4Level{causal_addr}, p);
+}
+
+/**
+ * @fn
  * HandlePageFault関数
  * @brief 
  * ページフォルトが置きたときに、例外の原因となったページにフレームを割り当てる。
@@ -106,7 +156,15 @@ Error PreparePageCache(FileDescriptor& fd, const FileMapping& m,
  */
 Error HandlePageFault(uint64_t error_code, uint64_t causal_addr) {
   auto& task = task_manager->CurrentTask();
-  if (error_code & 1) {  // P=1 かつページレベルの権限違反により例外が置きた
+  const bool present = (error_code >> 0) & 1;
+  const bool rw      = (error_code >> 1) & 1;
+  const bool user    = (error_code >> 2) & 1;
+  if (present && rw && user) {
+    // すでに確保済みだが書き込み権限がなくページフォルトが発生したときは、
+    // コピーオンライトにより、書き込み可能なページを確保してそこに書き込む
+    return CopyOnePage(causal_addr);
+  } else if(present) {
+    // P=1 かつページレベルの権限違反により例外が置きた
     return MAKE_ERROR(Error::kAlreadyAllocated);
   }
   // 先頭側のアドレス領域を、デマンドページングにより拡張する
@@ -177,10 +235,12 @@ WithError<PageMapEntry*> SetNewPageMapIfNotPresent(PageMapEntry& entry) {
  * @param page_map_level 階層レベル
  * @param addr LOADセグメントの仮想アドレス
  * @param num_4kpages LOADセグメントの残りページ数
+ * @param writable bool 書き込み可能フラグ
  * @return WithError<size_t> 未処理のページとエラー
  */
 WithError<size_t> SetupPageMap(
-    PageMapEntry* page_map, int page_map_level, LinearAddress4Level addr, size_t num_4kpages) {
+    PageMapEntry* page_map, int page_map_level, LinearAddress4Level addr,
+    size_t num_4kpages, bool writable) {
   // すべてのページを処理しきるまでループ
   while (num_4kpages > 0) {
     // 仮想アドレスから、その階層のどのエントリに属するかを取得
@@ -191,17 +251,19 @@ WithError<size_t> SetupPageMap(
     if (err) {
       return { num_4kpages, err };
     }
-    // 書き込み可能フラグを1にする
-    page_map[entry_index].bits.writable = 1;
     // userフラグを1にする
     page_map[entry_index].bits.user = 1;
 
     if (page_map_level == 1) {
+      // 最下層PDには、書き込み可能フラグを設定する
+      page_map[entry_index].bits.writable = writable;
       --num_4kpages;
     } else {
+      // PML4、PDP、PDは、書き込み可能にする。
+      page_map[entry_index].bits.writable = true;
       // ひとつ下位の階層ページング構造を再帰的に設定
       auto [ num_remain_pages, err ] =
-        SetupPageMap(child_map, page_map_level -1, addr, num_4kpages);
+        SetupPageMap(child_map, page_map_level -1, addr, num_4kpages, writable);
       if (err) {
         return { num_4kpages, err };
       }
@@ -229,12 +291,13 @@ WithError<size_t> SetupPageMap(
  * 階層ページング構造全体を設定する
  * @param addr LOADセグメントの先頭アドレス
  * @param num_4kpages LOADセグメントのページ数
+ * @param writable 書き込み可能フラグ
  * @return Error 
  */
-Error SetupPageMaps(LinearAddress4Level addr, size_t num_4kpages) {
+Error SetupPageMaps(LinearAddress4Level addr, size_t num_4kpages, bool writable) {
   // CR3レジスタから階層ページング構造の最上位PML4の物理アドレスを取得
   auto pml4_table = reinterpret_cast<PageMapEntry*>(GetCR3());
-  return SetupPageMap(pml4_table, 4, addr, num_4kpages).error;
+  return SetupPageMap(pml4_table, 4, addr, num_4kpages, writable).error;
 }
 
 /**
@@ -257,10 +320,12 @@ Error FreePageMap(PageMapEntry* table) {
  * 指定されたページング構造のエントリをすべて削除する
  * @param page_map 削除するページング構造
  * @param page_map_level ページング構造の階層レベル
+ * @param addr PML4のアドレス
  * @return Error 
  */
-Error CleanPageMap(PageMapEntry* page_map, int page_map_level) {
-  for (int i = 0; i < 512; ++i) {
+Error CleanPageMap(
+    PageMapEntry* page_map, int page_map_level, LinearAddress4Level addr) {
+  for (int i = addr.Part(page_map_level); i < 512; ++i) {
     auto entry = page_map[i];
     // presentフラグが立ってない場合は、確保されていないのでスキップ
     if (!entry.bits.present) {
@@ -269,15 +334,17 @@ Error CleanPageMap(PageMapEntry* page_map, int page_map_level) {
 
     if (page_map_level > 1) {
       // 再帰呼び出し
-      if (auto err = CleanPageMap(entry.Pointer(), page_map_level - 1)) {
+      if (auto err = CleanPageMap(entry.Pointer(), page_map_level - 1, addr)) {
         return err;
       }
     }
 
-    const auto entry_addr = reinterpret_cast<uintptr_t>(entry.Pointer());
-    const FrameID map_frame{entry_addr / kBytesPerFrame};
-    if (auto err = memory_manager->Free(map_frame, 1)) {
-      return err;
+    if (entry.bits.writable) {
+      const auto entry_addr = reinterpret_cast<uintptr_t>(entry.Pointer());
+      const FrameID map_frame{entry_addr / kBytesPerFrame};
+      if (auto err = memory_manager->Free(map_frame, 1)) {
+        return err;
+      }
     }
     page_map[i].data = 0;
   }
@@ -296,15 +363,50 @@ Error CleanPageMap(PageMapEntry* page_map, int page_map_level) {
  */
 Error CleanPageMaps(LinearAddress4Level addr) {
   auto pml4_table = reinterpret_cast<PageMapEntry*>(GetCR3());
-  auto pdp_table = pml4_table[addr.parts.pml4].Pointer();
-  pml4_table[addr.parts.pml4].data = 0;
-  if (auto err = CleanPageMap(pdp_table, 3)) {
-    return err;
+  return CleanPageMap(pml4_table, 4, addr);
+}
+
+/**
+ * @fn
+ * CopyPageMaps関数
+ * @brief 
+ * 階層ページング構造をシャロー(浅い)コピーする
+ * @param dest コピー先PageMapEntry
+ * @param src コピー元PageMapEntry
+ * @param part 階層レベル
+ * @param start コピー開始ページインデックス
+ * @return Error 
+ */
+Error CopyPageMaps(PageMapEntry* dest, PageMapEntry* src, int part, int start) {
+
+  if (part == 1) {
+    // 最下層PDが示すすでに確保済みの物理アドレスはコピーしない。
+    for (int i = start; i < 512; ++i) {
+      if (!src[i].bits.present) {
+        continue;
+      }
+      dest[i] = src[i];
+      dest[i].bits.writable = 0;
+    }
+    return MAKE_ERROR(Error::kSuccess);
   }
 
-  const auto pdp_addr = reinterpret_cast<uintptr_t>(pdp_table);
-  const FrameID pdp_frame{pdp_addr / kBytesPerFrame};
-  return memory_manager->Free(pdp_frame, 1);
+  for (int i = start; i < 512; ++i) {
+    if (!src[i].bits.present) {
+      continue;
+    }
+    auto [ table, err ] = NewPageMap();
+    if (err) {
+      return err;
+    }
+    dest[i] = src[i];
+    dest[i].SetPointer(table);
+    // 再帰的に下の階層のページング構造をコピー
+    if (auto err = CopyPageMaps(table, src[i].Pointer(), part - 1, 0)) {
+      return err;
+    }
+  }
+  return MAKE_ERROR(Error::kSuccess);
 }
 
 /**

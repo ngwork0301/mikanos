@@ -12,6 +12,8 @@ extern "C" {
   void SetCSSS(uint16_t cs, uint16_t ss);
   int CallApp(int argc, char** argv, uint16_t ss,
                uint64_t rip, uint64_t rsp, uint64_t* os_stack_ptr);
+  uint64_t GetCR0();
+  void SetCR0(uint64_t value);
   uint64_t GetCR2();
   uint64_t GetCR3();
   void SetCR3(uint64_t value);
@@ -22,4 +24,5 @@ extern "C" {
   void WriteMSR(uint32_t msr, uint64_t value);
   void SyscallEntry(void);
   void ExitApp(uint64_t rsp, int32_t ret_val);
+  void InvalidateTLB(uint64_t addr);
 }
