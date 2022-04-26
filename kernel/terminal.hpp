@@ -48,7 +48,7 @@ class Terminal {
     //! キー入力を1行分ためておくバッファ
     std::array<char, kLineMax> linebuf_{};
     void Scroll1();
-    void Print(char c);
+    void Print(char32_t c);
     void ExecuteLine();
     Error ExecuteFile(fat::DirectoryEntry& file_entry, char* command, char* first_arg);
 

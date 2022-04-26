@@ -389,8 +389,11 @@ void Terminal::Scroll1() {
  * 1文字ずつ出力する
  * @param c 
  */
-void Terminal::Print(char c) {
-    // 1行改行する
+void Terminal::Print(char32_t c) {
+  if (!show_window_) {
+    return;
+  }
+  // 1行改行する
   auto newline = [this]() {
     cursor_.x = 0;
     if (cursor_.y < kRows - 1) {
@@ -402,19 +405,21 @@ void Terminal::Print(char c) {
     }
   };
 
-  if (c == '\n') {
+  if (c == U'\n') {
     // 改行コードは、1行改行する
     newline();
-  } else {
-    if (show_window_) {
-      WriteAscii(*window_->Writer(), CalcCursorPos(), c, {255, 255, 255});
-    }
-    if (cursor_.x == kColumns - 1) {
-      // 出力する文字数が1行の最大文字数以上になったっら1行改行して出力
+  } else if (IsHankaku(c)) {
+    if (cursor_.x == kColumns) {
       newline();
-    } else {
-      ++cursor_.x;
     }
+    WriteUnicode(*window_->Writer(), CalcCursorPos(), c, {255, 255, 255});
+    ++cursor_.x;
+  } else {
+    if (cursor_.x >= kColumns - 1) {
+      newline();
+    }
+    WriteUnicode(*window_->Writer(), CalcCursorPos(), c, {255, 255, 255});
+    cursor_.x += 2;
   }
 }
 
@@ -586,26 +591,22 @@ void Terminal::ExecuteLine() {
       Print(name);
       Print(" is not a directory\n");
     } else {
-      auto cluster = file_entry->FirstCluster();
-      auto remain_bytes = file_entry->file_size;
+      fat::FileDescriptor fd{*file_entry};
+      char u8buf[4];
 
       // 一時的にカーソルを非表示
       DrawCursor(false);
-      // クラスタチェーンをたどって、クラスタごとにループ
-      while (cluster != 0 && cluster != fat::kEndOfClusterchain) {
-        // そのクラスタのブロックのポインタを文字列として取得
-        char* p = fat::GetSectorByCluster<char>(cluster);
-
-        int i = 0;
-        for (; i < fat::bytes_per_cluster && i < remain_bytes; ++i) {
-          // 1文字ずつ表示する
-          Print(*p);
-          ++p;
+      while (true) {
+        if (fd.Read(&u8buf[0], 1) != 1) {
+          break;
+        }
+        const int u8_remain = CountUTF8Size(u8buf[0]) - 1;
+        if (u8_remain > 0 && fd.Read(&u8buf[1], u8_remain) != u8_remain) {
+          break;
         }
 
-        // 出力した文字数分、残りバイト数から引く
-        remain_bytes -= i;
-        cluster = fat::NextCluster(cluster);
+        const auto [ u32, u8_next ] = ConvertUTF8To32(u8buf);
+        Print(u32 ? u32 : U'　');
       }
       DrawCursor(true);
     }
