@@ -832,9 +832,10 @@ Error Terminal::ExecuteFile(fat::DirectoryEntry& file_entry, char* command, char
   }
 
   // アプリ用のスタック領域を指定
+  const int stack_size = 8 * 4096;
   LinearAddress4Level stack_frame_addr{0xffff'ffff'ffff'e000};
   // 1ページ分階層ページング構造から物理ページを取得
-  if (auto err = SetupPageMaps(stack_frame_addr, 1)) {
+  if (auto err = SetupPageMaps(stack_frame_addr, stack_size / 4096)) {
     return err;
   }
 
@@ -856,7 +857,7 @@ Error Terminal::ExecuteFile(fat::DirectoryEntry& file_entry, char* command, char
 
   // CS/SSレジスタを切り替えて、ユーザセグメントとして実行
   int ret = CallApp(argc.value, argv, 3 << 3 | 3, app_load.entry,
-      stack_frame_addr.value + 4096 - 8,
+      stack_frame_addr.value + stack_size - 8,
       &task.OSStackPointer());
   // アプリ側が使用する不ァイルディスクリプタをクリア
   task.Files().clear();

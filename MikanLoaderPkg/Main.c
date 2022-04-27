@@ -540,9 +540,9 @@ EFI_STATUS EFIAPI UefiMain(
     // Block I/O Protocolで先頭16MiBを読み出す
     EFI_BLOCK_IO_MEDIA* media = block_io->Media;
     UINTN volume_bytes = (UINTN)media->BlockSize * (media->LastBlock + 1);
-    if (volume_bytes > 16 * 1024 * 1024) {
-      // 読み出すサイズは最大16MiBとする。それ以上にするとロードに時間がかかる。
-      volume_bytes = 16 * 1024 * 1024;
+    if (volume_bytes > 32 * 1024 * 1024) {
+      // 読み出すサイズは最大32MiBとする。それ以上にするとロードに時間がかかる。
+      volume_bytes = 32 * 1024 * 1024;
     }
 
     // 読みだしたブロックの情報を出力

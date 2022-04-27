@@ -242,6 +242,9 @@ extern "C" void KernelMainNewStack(
   // FATボリュームの読み取り
   fat::Initialize(volume_image);
 
+  // FreeTypeを初期化してフォントファイルが読めるようにする
+  InitializeFont();
+
   // PCIバスをスキャンしてデバイスをロードする。
   InitializePCI();
 

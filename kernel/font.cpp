@@ -6,9 +6,17 @@
 
 #include "font.hpp"
 
+#include <cstdlib>
+#include <vector>
+
+#include "fat.hpp"
+#include "logger.hpp"
+
 extern const uint8_t _binary_hankaku_bin_start;
 extern const uint8_t _binary_hankaku_bin_end;
 extern const uint8_t _binary_hankaku_bin_size;
+
+namespace {
 
 /**
  * @fn
@@ -26,6 +34,34 @@ const uint8_t* GetFont(char c) {
   }
   return &_binary_hankaku_bin_start + index;
 }
+
+FT_Library ft_library;
+std::vector<uint8_t>* nihongo_buf;
+
+/**
+ * @fn
+ * RenderUnicode関数
+ * @brief 
+ * 指定して文字の字形を読み込む関数
+ * @param [in] c 文字
+ * @param [in, out] face フォントのFace
+ * @return Error 
+ */
+Error RenderUniCode(char32_t c, FT_Face face) {
+  const auto glyph_index = FT_Get_Char_Index(face, c);
+  if (glyph_index == 0) {
+    return MAKE_ERROR(Error::kFreeTypeError);
+  }
+
+  if (int err = FT_Load_Glyph(face, glyph_index,
+                              FT_LOAD_RENDER | FT_LOAD_TARGET_MONO)) {
+    return MAKE_ERROR(Error::kFreeTypeError);
+  }
+  return MAKE_ERROR(Error::kSuccess);
+}
+
+
+} // namespace
 
 /**
  * @fn
@@ -67,17 +103,50 @@ void WriteAscii(PixelWriter& writer, Vector2D<int> pos, char c, const PixelColor
  * @param pos 描画位置
  * @param c 描画文字列
  * @param color 色
+ * @return Error
  */
-void WriteUnicode(PixelWriter& writer, Vector2D<int> pos, 
+Error WriteUnicode(PixelWriter& writer, Vector2D<int> pos, 
                   char32_t c, const PixelColor& color) {
   if (c < 0x7f) {
     // ASCIIコードはそのままWriteAsciiに渡す
     WriteAscii(writer, pos, c, color);
-    return;
+    return MAKE_ERROR(Error::kSuccess);
   }
+  // 以降、ASCIIコード以外(日本語)の文字の描画
+  auto [ face, err ] = NewFTFace();
+  if (err) {
+    WriteAscii(writer, pos, '?', color);
+    WriteAscii(writer, pos + Vector2D<int>{8, 0}, '?', color);
+    return err;
+  }
+  if ( auto err = RenderUniCode(c, face)) {
+    FT_Done_Face(face);
+    WriteAscii(writer, pos, '?', color);
+    WriteAscii(writer, pos + Vector2D<int>{8, 0}, '?', color);
+    return err;
+  }
+  FT_Bitmap& bitmap = face->glyph->bitmap;
 
-  WriteAscii(writer, pos, '?', color);
-  WriteAscii(writer, pos + Vector2D<int>{8, 0}, '?', color);
+  // グリフの左上の座標を算出
+  const int baseline = (face->height + face->descender) *
+    face->size->metrics.y_ppem / face->units_per_EM;
+  const auto glyph_topleft = pos + Vector2D<int>{
+    face->glyph->bitmap_left, baseline - face->glyph->bitmap_top};
+
+  for (int dy = 0; dy < bitmap.rows; ++dy) {
+    unsigned char* q = &bitmap.buffer[bitmap.pitch * dy];
+    if (bitmap.pitch < 0) {
+      q -= bitmap.pitch * bitmap.rows;
+    }
+    for (int dx = 0; dx < bitmap.width; ++dx) {
+      const bool b = q[dx >> 3] & (0x80 >> (dx & 0x07));
+      if (b) {
+        writer.Write(glyph_topleft + Vector2D<int>{dx, dy}, color);
+      }
+    }
+  }
+  FT_Done_Face(face);
+  return MAKE_ERROR(Error::kSuccess);
 }
 
 /**
@@ -148,6 +217,25 @@ std::pair<char32_t, int> ConvertUTF8To32(const char* u8) {
 
 /**
  * @fn
+ * NewFTFace関数
+ * @brief 
+ * フェースオブジェクトを準備する
+ * @return WithError<FT_Face> 
+ */
+WithError<FT_Face> NewFTFace() {
+  FT_Face face;
+  if (int err = FT_New_Memory_Face(
+      ft_library, nihongo_buf->data(), nihongo_buf->size(), 0, &face)) {
+    return { face, MAKE_ERROR(Error::kFreeTypeError) };
+  }
+  if (int err = FT_Set_Pixel_Sizes(face, 16, 16)) {
+    return { face, MAKE_ERROR(Error::kFreeTypeError) };
+  }
+  return { face, MAKE_ERROR(Error::kSuccess) };
+}
+
+/**
+ * @fn
  * WriteString関数
  * 
  * @brief
@@ -180,4 +268,30 @@ void WriteString(PixelWriter& writer, Vector2D<int> pos, const char* s, const Pi
  */
 bool IsHankaku(char32_t c) {
   return c <= 0x7f;
+}
+
+/**
+ * @fn
+ * InitializeFont関数
+ * @brief 
+ * FreeTypeライブラリを初期化する
+ */
+void InitializeFont() {
+  // FreeTypeライブラリを初期化する
+  if (int err = FT_Init_FreeType(&ft_library)) {
+    exit(1);
+  }
+
+  auto [ entry, pos_slash ] = fat::FindFile("/nihongo.ttf");
+  if (entry == nullptr || pos_slash) {
+    exit(1);
+  }
+
+  // フォントファイルの読み込み
+  const size_t size = entry->file_size;
+  nihongo_buf = new std::vector<uint8_t>(size);
+  if (LoadFile(nihongo_buf->data(), size, *entry) != size) {
+    delete nihongo_buf;
+    exit(1);
+  }
 }
