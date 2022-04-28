@@ -11,9 +11,9 @@ extern "C" void main(int argc, char** argv) {
       exit(err_openwin);
     }
 
-    SyscallWinWriteString(layer_id, 7, 24, 0xc00000, "おはよう　世界！");
-    SyscallWinWriteString(layer_id, 24, 40, 0x00c000, "こんにちは　世界！");
-    SyscallWinWriteString(layer_id, 40, 56, 0x0000c0, "こんばんは　世界！");
+    SyscallWinWriteString(layer_id, 7, 24, 0xc00000, u8"おはよう　世界！");
+    SyscallWinWriteString(layer_id, 24, 40, 0x00c000, u8"こんにちは　世界！");
+    SyscallWinWriteString(layer_id, 40, 56, 0x0000c0, u8"こんばんは　世界！");
 
     // 終了イベントが来たらアプリを終了させる
     AppEvent events[1];
