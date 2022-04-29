@@ -6,6 +6,7 @@
 
 #include "asmfunc.h"
 #include "elf.hpp"
+#include "file.hpp"
 #include "font.hpp"
 #include "keyboard.hpp"
 #include "layer.hpp"
@@ -199,11 +200,15 @@ WithError<uint64_t> LoadELF(Elf64_Ehdr* ehdr) {
  * Terminal::Terminalコンストラクタ
  * @brief Construct a new Terminal:: Terminal object
  * Terminalを生成する
- * @param task_id 対応するタスクID
+ * @param task 対応するタスク
  * @param show_window ターミナルウィンドウ表示の有無
  */
-Terminal::Terminal(uint64_t task_id, bool show_window)
-    : task_id_{task_id}, show_window_{show_window} {
+Terminal::Terminal(Task& task, bool show_window)
+    : task_{task}, show_window_{show_window} {
+  for (int i = 0; i < files_.size(); ++i) {
+    files_[i] = std::make_shared<TerminalFileDescriptor>(*this);
+  }
+
   if (show_window_) {
     // ターミナルウィンドウの生成
     window_ = std::make_shared<ToplevelWindow>(
@@ -438,17 +443,13 @@ void Terminal::Print(const char* s, std::optional<size_t> len) {
   // 一時的にカーソルは非表示
   DrawCursor(false);
 
-  if (len) {
-    for (size_t i = 0; i < *len; ++i) {
-      Print(*s);
-      ++s;
-    }
-  } else {
-    // 引数に文字数の指定がなかった場合は、全文字数描画する。
-    while(*s) {
-      Print(*s);
-      ++s;
-    }
+  size_t i = 0;
+  const size_t len_ = len ? *len : std::numeric_limits<size_t>::max();
+
+  while (s[i] && i < len_) {
+    const auto [ u32, bytes ] = ConvertUTF8To32(&s[i]);
+    Print(u32);
+    i += bytes;
   }
 
   // 非表示にしたカーソルを再度表示
@@ -464,7 +465,7 @@ void Terminal::Print(const char* s, std::optional<size_t> len) {
     Rectangle<int> draw_area{draw_pos, draw_size};
 
     Message msg = MakeLayerMessage(
-        task_id_, LayerID(), LayerOperation::DrawArea, draw_area);
+        task_.ID(), LayerID(), LayerOperation::DrawArea, draw_area);
     __asm__("cli");  // 割込み禁止
     task_manager->SendMessage(1, msg);
     __asm__("sti");  // 割り込み許可
@@ -522,16 +523,45 @@ void ListAllEntries(Terminal* term, uint32_t dir_cluster) {
 void Terminal::ExecuteLine() {
   char* command = &linebuf_[0];
   char* first_arg = strchr(&linebuf_[0], ' ');
+  char* redirect_char = strchr(&linebuf_[0], '>');
   if (first_arg) {
     // 第一引数があれば、コマンドと引数の間はNULL文字をいれて、アドレスを１つインクリメント
     *first_arg = 0;
     ++first_arg;
   }
+
+  //! リダイレクトで出力先を変更する前のファイルディスクリプタ＝標準出力
+  auto original_stdout = files_[1];
+
+  // リダイレクト記号がついていた場合は出力先のファイルディスクリプタをすり替える
+  if (redirect_char) {
+    *redirect_char = 0;
+    char* redirect_dest = &redirect_char[1];
+    while (isspace(*redirect_dest)) {
+      ++redirect_dest;
+    }
+
+    auto [ file, post_slash ] = fat::FindFile(redirect_dest);
+    if (file == nullptr) {
+      auto [ new_file, err ] = fat::CreateFile(redirect_dest);
+      if (err) {
+        PrintToFD(*files_[2],
+                  "failed to create a redirect file: %s\n", err.Name());
+        return;
+      }
+      file = new_file;
+    } else if (file->attr == fat::Attribute::kDirectory || post_slash) {
+      PrintToFD(*files_[2], "cannnot redirect to a directory\n");
+      return;
+    }
+    files_[1] = std::make_shared<fat::FileDescriptor>(*file);
+  }
+
   if (strcmp(command, "echo") == 0) {
     if (first_arg) {
-      Print(first_arg);
+      PrintToFD(*files_[1], first_arg);
     }
-    Print("\n");
+    PrintToFD(*files_[1], "\n");
   } else if (strcmp(command, "clear") == 0) {
     if (show_window_) {
       // ターミナル画面内をすべて黒で塗りつぶす
@@ -548,7 +578,7 @@ void Terminal::ExecuteLine() {
       sprintf(s, "%02x:%02x.%d vend=%04x head=%02x class=%02x.%02x.%02x\n",
           dev.bus, dev.device, dev.function, vender_id, dev.header_type,
           dev.class_code.base, dev.class_code.sub, dev.class_code.interface);
-      Print(s);
+      PrintToFD(*files_[1], s);
     }
   } else if(strcmp(command, "ls") == 0) {
     if (first_arg[0] == '\0') {
@@ -558,9 +588,9 @@ void Terminal::ExecuteLine() {
       auto [ dir, post_slash ] = fat::FindFile(first_arg);
       if (dir == nullptr) {
         // 存在しなかった場合
-        Print("No such filr or directory: ");
-        Print(first_arg);
-        Print("\n");
+        PrintToFD(*files_[2], "No such filr or directory: ");
+        PrintToFD(*files_[2], first_arg);
+        PrintToFD(*files_[2], "\n");
       } else if (dir->attr == fat::Attribute::kDirectory) {
         // 引数で指定したものがディレクトリだったら、そのディレクトリの中身を表示
         ListAllEntries(this, dir->FirstCluster());
@@ -569,11 +599,11 @@ void Terminal::ExecuteLine() {
         fat::FormatName(*dir, name);
         if (post_slash) {
           // 末尾に/がついていたときは、ディレクトリでなければエラー出力
-          Print(name);
-          Print(" is not directory.\n");
+          PrintToFD(*files_[2], name);
+          PrintToFD(*files_[2], " is not directory.\n");
         } else {
-          Print(name);
-          Print("\n");
+          PrintToFD(*files_[2], name);
+          PrintToFD(*files_[2], "\n");
         }
       }
     }
@@ -584,12 +614,12 @@ void Terminal::ExecuteLine() {
     auto [ file_entry, post_slash ] = fat::FindFile(first_arg);
     if (!file_entry) {
       sprintf(s, "no such file: %s\n", first_arg);
-      Print(s);
+      PrintToFD(*files_[2], s);
     } else if (file_entry->attr != fat::Attribute::kDirectory && post_slash) {
       char name[13];
       fat::FormatName(*file_entry, name);
-      Print(name);
-      Print(" is not a directory\n");
+      PrintToFD(*files_[2], name);
+      PrintToFD(*files_[2], " is not a directory\n");
     } else {
       fat::FileDescriptor fd{*file_entry};
       char u8buf[4];
@@ -604,9 +634,9 @@ void Terminal::ExecuteLine() {
         if (u8_remain > 0 && fd.Read(&u8buf[1], u8_remain) != u8_remain) {
           break;
         }
+        u8buf[u8_remain + 1] = 0;
 
-        const auto [ u32, u8_next ] = ConvertUTF8To32(u8buf);
-        Print(u32 ? u32 : U'　');
+        PrintToFD(*files_[1], "%s", u8buf);
       }
       DrawCursor(true);
     }
@@ -622,27 +652,28 @@ void Terminal::ExecuteLine() {
     sprintf(s, "Phy used: %lu frames (%llu MiB)\n",
         p_stat.allocated_frames,
         p_stat.allocated_frames * kBytesPerFrame / 1024 / 1024);
-    Print(s);
+    PrintToFD(*files_[1], s);
     sprintf(s, "Phy total: %lu frames (%llu MiB)\n",
         p_stat.total_frames,
         p_stat.total_frames * kBytesPerFrame / 1024 /1024);
-    Print(s);
+    PrintToFD(*files_[1], s);
   } else if (command[0] != 0) {
     // 打ち込まれた名前が組み込みコマンド以外ならファイルを探す
     auto [ file_entry, post_slash ] = fat::FindFile(command);
     if(!file_entry) {
-      Print("no such command: ");
-      Print(command);
-      Print("\n");
+      PrintToFD(*files_[2], "no such command: ");
+      PrintToFD(*files_[2], command);
+      PrintToFD(*files_[2], "\n");
     } else if (file_entry->attr != fat::Attribute::kDirectory && post_slash) {
       char name[13];
       fat::FormatName(*file_entry, name);
-      Print(name);
-      Print(" is not a directory\n");
+      PrintToFD(*files_[2], name);
+      PrintToFD(*files_[2], " is not a directory\n");
     } else {
       ExecuteFile(*file_entry, command, first_arg);
     }
   }
+  files_[1] = original_stdout;
 }
 
 /**
@@ -839,10 +870,10 @@ Error Terminal::ExecuteFile(fat::DirectoryEntry& file_entry, char* command, char
     return err;
   }
 
-  // 起動するアプリ側で使用できるように、このタスクの標準入力=0、標準出力=1、標準エラー出力=2を設定する
+  // 起動するアプリ側で使用できるように、
+  // このタスクの標準入力=0、標準出力=1、標準エラー出力=2の出力先をターミナルのリダイレクト先に設定する
   for (int i = 0; i < 3; ++i) {
-    task.Files().push_back(
-        std::make_unique<TerminalFileDescriptor>(task, *this));
+    task.Files().push_back(files_[i]);
   }
 
   // デマンドページングのアドレス範囲の初期値を設定する。
@@ -881,12 +912,12 @@ Error Terminal::ExecuteFile(fat::DirectoryEntry& file_entry, char* command, char
  * TerminalFileDescriptor::TerminalFileDescriptorコンストラクタ
  * @brief Construct a new Terminal File Descriptor:: Terminal File Descriptor object
  * 
- * @param task このファイルディスクリプタのタスク
  * @param term このファイルディスクリプタのターミナルインスタンス
  */
-TerminalFileDescriptor::TerminalFileDescriptor(Task& task, Terminal& term)
-    : task_{task}, term_{term} {
+TerminalFileDescriptor::TerminalFileDescriptor(Terminal& term)
+    : term_{term} {
 }
+
 
 /**
  * @fn
@@ -903,9 +934,9 @@ size_t TerminalFileDescriptor::Read(void* buf, size_t len) {
   // キーボード入力イベントを待つ
   while(true) {
     __asm__("cli"); // 割り込み禁止。この間は、タスク切り替え、タイマー処理も発生しなくなる！
-    auto msg = task_.ReceiveMessage();
+    auto msg = term_.UnderlyingTask().ReceiveMessage();
     if (!msg) {
-      task_.Sleep();
+      term_.UnderlyingTask().Sleep();
       continue;
     }
     __asm__("sti"); // 割り込み許可
@@ -975,7 +1006,7 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
 
   __asm__("cli"); // 割り込みを抑止
   Task& task = task_manager->CurrentTask();
-  Terminal* terminal = new Terminal{task_id, show_window};
+  Terminal* terminal = new Terminal{task, show_window};
   if (show_window) {
     layer_manager->Move(terminal->LayerID(), {100, 200});
     // ターミナルタスクを検索表に登録する

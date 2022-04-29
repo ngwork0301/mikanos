@@ -72,7 +72,7 @@ class Task {
     std::optional<Message> ReceiveMessage();
     bool Running() { return running_; }
     unsigned int Level() { return level_; }
-    std::vector<std::unique_ptr<FileDescriptor>>& Files(){ return files_; };
+    std::vector<std::shared_ptr<FileDescriptor>>& Files(){ return files_; };
 
     uint64_t DPagingBegin() const;
     void SetDPagingBegin(uint64_t v);
@@ -98,7 +98,7 @@ class Task {
     //! このタスクが実行状態／実行可能状態であるか
     bool running_{false};
     //! このタスクがひらくファイルのファイルディスクリプタ配列
-    std::vector< std::unique_ptr<FileDescriptor> > files_{};
+    std::vector< std::shared_ptr<FileDescriptor> > files_{};
     //! デマンドページングのアドレス範囲の開始位置、終了位置
     uint64_t dpaging_begin_{0}, dpaging_end_{0};
     //! ファイルマッピングの終了アドレス
