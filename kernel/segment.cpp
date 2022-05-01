@@ -4,7 +4,7 @@
 #include "asmfunc.h"
 
 namespace {
-  std::array<SegmentDescriptor, 3> gdt;
+  std::array<SegmentDescriptor, 5> gdt;
 }
 
 /**
