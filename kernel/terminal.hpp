@@ -39,6 +39,8 @@ class Terminal {
     bool show_window_;
     //! 標準入出力のファイルディスクリプタ
     std::array<std::shared_ptr<FileDescriptor>, 3> files_;
+    //! 終了コード
+    int last_exit_code_{0};
 
     //! カーソル座標
     Vector2D<int> cursor_{0, 0};
@@ -55,7 +57,7 @@ class Terminal {
     void Scroll1();
     void Print(char32_t c);
     void ExecuteLine();
-    Error ExecuteFile(fat::DirectoryEntry& file_entry, char* command, char* first_arg);
+    WithError<int> ExecuteFile(fat::DirectoryEntry& file_entry, char* command, char* first_arg);
 
     //! コマンドヒストリ
     std::deque<std::array<char, kLineMax>> cmd_history_{};
