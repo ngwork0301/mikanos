@@ -668,7 +668,7 @@ void Terminal::ExecuteLine() {
       exit_code = 1;
     } else {
       fat::FileDescriptor fd{*file_entry};
-      char u8buf[4];
+      char u8buf[5];
 
       // 一時的にカーソルを非表示
       DrawCursor(false);
@@ -1188,7 +1188,7 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
 
   // 引数に渡されたコマンドラインをターミナルに入力する
   if (term_desc && !term_desc->command_line.empty()) {
-    for (int i = 0; term_desc->command_line.length(); ++i) {
+    for (int i = 0; i < term_desc->command_line.length(); ++i) {
       terminal->InputKey(0, 0, term_desc->command_line[i]);
     }
     terminal->InputKey(0, 0, '\n');
