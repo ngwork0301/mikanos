@@ -630,7 +630,7 @@ void Terminal::ExecuteLine() {
       auto [ dir, post_slash ] = fat::FindFile(first_arg);
       if (dir == nullptr) {
         // 存在しなかった場合
-        PrintToFD(*files_[2], "No such filr or directory: ");
+        PrintToFD(*files_[2], "No such file or directory: ");
         PrintToFD(*files_[2], first_arg);
         PrintToFD(*files_[2], "\n");
         exit_code = 1;
@@ -646,8 +646,8 @@ void Terminal::ExecuteLine() {
           PrintToFD(*files_[2], " is not directory.\n");
           exit_code = 1;
         } else {
-          PrintToFD(*files_[2], name);
-          PrintToFD(*files_[2], "\n");
+          PrintToFD(*files_[1], name);
+          PrintToFD(*files_[1], "\n");
         }
       }
     }
