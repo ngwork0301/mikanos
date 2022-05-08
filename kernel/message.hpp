@@ -35,6 +35,7 @@ struct Message {
     kMouseMove,
     kMouseButton,
     kWindowActive,
+    kPipe,
   } type;
 
   //! kLayer, kLayerFinishでつかう送信元タスクのID
@@ -79,6 +80,13 @@ struct Message {
     struct {
       int activate; // 1: activate, 0: deactivate
     } window_active;
+
+    struct {
+      // 16バイトより大きくしすぎると、メッセージ構造体が大きくなり、メモリが無駄になる
+      // それより小さいと何個もメッセージを送る必要があり、オーバーヘッドが大きくなる
+      char data[16];
+      uint8_t len;
+    } pipe;
   } arg;
 
 };

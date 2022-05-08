@@ -201,12 +201,20 @@ WithError<uint64_t> LoadELF(Elf64_Ehdr* ehdr) {
  * @brief Construct a new Terminal:: Terminal object
  * Terminalを生成する
  * @param task 対応するタスク
- * @param show_window ターミナルウィンドウ表示の有無
+ * @param TerminalDescriptor 
  */
-Terminal::Terminal(Task& task, bool show_window)
-    : task_{task}, show_window_{show_window} {
-  for (int i = 0; i < files_.size(); ++i) {
-    files_[i] = std::make_shared<TerminalFileDescriptor>(*this);
+Terminal::Terminal(Task& task, const TerminalDescriptor* term_desc)
+    : task_{task} {
+  if (term_desc) {
+    show_window_ = term_desc->show_window;
+    for (int i = 0; i < files_.size(); ++i) {
+      files_[i] = term_desc->files[i];
+    }
+  } else {
+    show_window_ = true;
+    for (int i = 0; i < files_.size(); i++) {
+      files_[i] = std::make_shared<TerminalFileDescriptor>(*this);
+    }
   }
 
   if (show_window_) {
@@ -524,6 +532,7 @@ void Terminal::ExecuteLine() {
   char* command = &linebuf_[0];
   char* first_arg = strchr(&linebuf_[0], ' ');
   char* redirect_char = strchr(&linebuf_[0], '>');
+  char* pipe_char = strchr(&linebuf_[0], '|');
   if (first_arg) {
     // 第一引数があれば、コマンドと引数の間はNULL文字をいれて、アドレスを１つインクリメント
     *first_arg = 0;
@@ -559,6 +568,31 @@ void Terminal::ExecuteLine() {
       return;
     }
     files_[1] = std::make_shared<fat::FileDescriptor>(*file);
+  }
+  std::shared_ptr<PipeDescriptor> pipe_fd;
+  uint64_t subtask_id = 0;
+
+  // パイプ記号がついていた場合は、次のコマンド用のタスクを作成しておく
+  if (pipe_char) {
+    *pipe_char = 0;
+    char* subcommand = &pipe_char[1];
+    while (isspace(*subcommand)) {
+      ++subcommand;
+    }
+
+    auto& subtask = task_manager->NewTask();
+    pipe_fd = std::make_shared<PipeDescriptor>(subtask);
+    auto term_desc = new TerminalDescriptor{
+      subcommand, true, false,
+      { pipe_fd, files_[1], files_[2] }
+    };
+    // 標準出力をサブコマンドに接続
+    files_[1] = pipe_fd;
+
+    subtask_id = subtask
+      .InitContext(TaskTerminal, reinterpret_cast<int64_t>(term_desc))
+      .Wakeup()
+      .ID();
   }
 
   if (strcmp(command, "echo") == 0) {
@@ -653,9 +687,12 @@ void Terminal::ExecuteLine() {
       DrawCursor(true);
     }
   } else if (strcmp(command, "noterm") == 0) {
+    auto term_desc = new TerminalDescriptor{
+      first_arg, true, false, files_
+    };
     // ターミナルを隠して、アプリを起動する
     task_manager->NewTask()
-      .InitContext(TaskTerminal, reinterpret_cast<int64_t>(first_arg))
+      .InitContext(TaskTerminal, reinterpret_cast<int64_t>(term_desc))
       .Wakeup();
   } else if (strcmp(command, "memstat") == 0) {
     const auto p_stat = memory_manager->Stat();
@@ -693,6 +730,21 @@ void Terminal::ExecuteLine() {
       }
     }
   }
+
+  // パイプがついていた場合は、右側のコマンドに、左側のコマンドの終了を通知して、
+  // 右側のコマンドが終了するのをまつ
+  if (pipe_fd) {
+    pipe_fd->FinishWrite();
+    __asm__("cli"); // 割り込み禁止
+    auto [ ec, err ] = task_manager->WaitFinish(subtask_id);
+    __asm__("sti"); // 割り込み許可
+    if (err) {
+      Log(kWarn, "failed to wait finish. %s\n", err.Name());
+    }
+    // MikanOSでは右側の終了コマンドを最終的な終了コードにする。
+    exit_code = ec;
+  }
+
   last_exit_code_ = exit_code;
   files_[1] = original_stdout;
 }
@@ -1009,6 +1061,105 @@ size_t TerminalFileDescriptor::Load(void* buf, size_t offset, size_t len) {
 
 /**
  * @fn
+ * PipeDescriptor::PipeDescriptorコンストラクタ
+ * @brief Construct a new Pipe Descriptor:: Pipe Descriptor object
+ * 
+ * @param task 
+ */
+PipeDescriptor::PipeDescriptor(Task& task) : task_{task} {
+}
+
+/**
+ * @fn
+ * PipeDescriptor::Writeメソッド
+ * @brief 
+ * kPipeメッセージを送信する
+ * @param buf 
+ * @param len 
+ * @return size_t 
+ */
+size_t PipeDescriptor::Write(const void* buf, size_t len) {
+  auto bufc = reinterpret_cast<const char*>(buf);
+  Message msg{Message::kPipe};
+  size_t sent_bytes =0;
+  while (sent_bytes < len) {
+    msg.arg.pipe.len = std::min(len - sent_bytes, sizeof(msg.arg.pipe.data));
+    memcpy(msg.arg.pipe.data, &bufc[sent_bytes], msg.arg.pipe.len);
+    sent_bytes += msg.arg.pipe.len;
+    __asm__("cli"); // 割り込み禁止
+    task_.SendMessage(msg);
+    __asm__("sti"); // 割り込み許可
+  }
+  return len;
+}
+
+/**
+ * @fn
+ * PipeDescriptor::Readメソッド
+ * @brief 
+ * メッセージキューからデータを受信する
+ * @param [in, out] buf 読み込んだデータの
+ * @param [in] len 読み込むバイト数 
+ * @return size_t 読み込んだバイト数
+ */
+size_t PipeDescriptor::Read(void* buf, size_t len) {
+  if (len_ > 0) {
+    // 前回のReadで読みきれなかった分を、読む
+    const size_t copy_bytes = std::min(len_, len);
+    memcpy(buf, data_, copy_bytes);
+    len_ -= copy_bytes;
+    memmove(data_, &data_[copy_bytes], len_);
+    return copy_bytes;
+  }
+
+  if (closed_) {
+    return 0;
+  }
+
+  while (true) {
+    __asm__("cli"); // 割り込み禁止
+    auto msg = task_.ReceiveMessage();
+    if (!msg) {
+      task_.Sleep();
+      continue;
+    }
+    __asm__("sti");
+
+    if (msg->type != Message::kPipe) {
+      continue;
+    }
+    
+    if (msg->arg.pipe.len == 0) {
+      closed_ = true;
+      return 0;
+    }
+
+    const size_t copy_bytes = std::min<size_t>(msg->arg.pipe.len, len);
+    memcpy(buf, msg->arg.pipe.data, copy_bytes);
+    // 残りのデータ長をセット
+    len_ = msg->arg.pipe.len - copy_bytes;
+    // 残りのデータをセット
+    memcpy(data_, &msg->arg.pipe.data[copy_bytes], len_);
+    return copy_bytes;
+  }
+}
+
+/**
+ * @fn
+ * PipeDescriptor::FinishWriteメソッド
+ * @brief 
+ * これ以上送信データがないことを伝える
+ */
+void PipeDescriptor::FinishWrite() {
+  Message msg{Message::kPipe};
+  msg.arg.pipe.len = 0;
+  __asm__("cli"); // 割り込み禁止
+  task_.SendMessage(msg);
+  __asm__("sti"); // 割り込み許可
+}
+
+/**
+ * @fn
  * TaskTerminal関数
  * 
  * @brief 
@@ -1018,12 +1169,15 @@ size_t TerminalFileDescriptor::Load(void* buf, size_t offset, size_t len) {
  */
 void TaskTerminal(uint64_t task_id, int64_t data) {
   // 引数にコマンドラインが渡されたら、画面を非表示にして起動する
-  const char* command_line = reinterpret_cast<char*>(data);
-  const bool show_window = command_line == nullptr;
+  const auto term_desc = reinterpret_cast<TerminalDescriptor*>(data);
+  bool show_window = true;
+  if (term_desc) {
+    show_window = term_desc->show_window;
+  }  
 
   __asm__("cli"); // 割り込みを抑止
   Task& task = task_manager->CurrentTask();
-  Terminal* terminal = new Terminal{task, show_window};
+  Terminal* terminal = new Terminal{task, term_desc};
   if (show_window) {
     layer_manager->Move(terminal->LayerID(), {100, 200});
     // ターミナルタスクを検索表に登録する
@@ -1033,11 +1187,19 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
   __asm__("sti"); // 割り込みを許可
 
   // 引数に渡されたコマンドラインをターミナルに入力する
-  if (command_line) {
-    for (int i = 0; command_line[i] != '\0'; ++i) {
-      terminal->InputKey(0, 0, command_line[i]);
+  if (term_desc && !term_desc->command_line.empty()) {
+    for (int i = 0; term_desc->command_line.length(); ++i) {
+      terminal->InputKey(0, 0, term_desc->command_line[i]);
     }
     terminal->InputKey(0, 0, '\n');
+  }
+
+  // パイプの右側のタスクの終了を通知する
+  if (term_desc && term_desc->exit_after_command) {
+    delete term_desc;
+    __asm__("cli");  // 割り込み禁止
+    task_manager->Finish(terminal->LastExitCode());
+    __asm__("sti");
   }
 
   // カーソル点滅用のタイマーを設定
