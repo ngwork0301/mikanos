@@ -668,19 +668,15 @@ void Terminal::ExecuteLine() {
       exit_code = 1;
     } else {
       fat::FileDescriptor fd{*file_entry};
-      char u8buf[5];
+      char u8buf[1024];
 
       // 一時的にカーソルを非表示
       DrawCursor(false);
       while (true) {
-        if (fd.Read(&u8buf[0], 1) != 1) {
+        // 描画処理が遅くなるので、1行毎に再描画
+        if (ReadDelim(fd, '\n', u8buf, sizeof(u8buf)) == 0) {
           break;
         }
-        const int u8_remain = CountUTF8Size(u8buf[0]) - 1;
-        if (u8_remain > 0 && fd.Read(&u8buf[1], u8_remain) != u8_remain) {
-          break;
-        }
-        u8buf[u8_remain + 1] = 0;
 
         PrintToFD(*files_[1], "%s", u8buf);
       }
@@ -977,6 +973,23 @@ WithError<int> Terminal::ExecuteFile(fat::DirectoryEntry& file_entry, char* comm
 }
 
 /**
+ * @fn 
+ * Terminal::Redrawメソッド
+ * @brief 
+ * ターミナル全体を再描画する
+ */
+void Terminal::Redraw() {
+  Rectangle<int> draw_area{ToplevelWindow::kTopLeftMargin,
+                           window_->InnerSize()};
+
+  Message msg = MakeLayerMessage(
+      task_.ID(), LayerID(), LayerOperation::DrawArea, draw_area);
+  __asm__("cli");  // 割込み禁止
+  task_manager->SendMessage(1, msg);
+  __asm__("sti");  // 割り込み許可
+}
+
+/**
  * @fn
  * TerminalFileDescriptor::TerminalFileDescriptorコンストラクタ
  * @brief Construct a new Terminal File Descriptor:: Terminal File Descriptor object
@@ -1019,6 +1032,8 @@ size_t TerminalFileDescriptor::Read(void* buf, size_t len) {
       s[1] = toupper(msg->arg.keyboard.ascii);
       // 入力された文字をエコーバックする
       term_.Print(s);
+      // 入力される度にターミナル全体を再描画する。
+      term_.Redraw();
       if (msg->arg.keyboard.keycode == 7 /* D */) {
         return 0;  // EOT
       }
@@ -1042,6 +1057,8 @@ size_t TerminalFileDescriptor::Read(void* buf, size_t len) {
  */
 size_t TerminalFileDescriptor::Write(const void* buf, size_t len) {
   term_.Print(reinterpret_cast<const char*>(buf), len);
+  // 表示する度に、ターミナル全体を再描画する。
+  term_.Redraw();
   return len;
 }
 

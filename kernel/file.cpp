@@ -24,3 +24,30 @@ size_t PrintToFD(FileDescriptor& fd, const char* format, ...) {
   fd.Write(s, result);
   return result;
 }
+
+/**
+ * @fn
+ * ReadDelim関数
+ * @brief 
+ * 指定された区切り文字まで読み取る
+ * @param [in] fd 読み取り対象のファイルディスクリプタ
+ * @param [in] delim 区切り文字
+ * @param [out] buf 読み取った文字列のバッファ
+ * @param [in] len 読み取る最大バイト数
+ * @return size_t 読みとったバイト数
+ */
+size_t ReadDelim(FileDescriptor& fd, char delim, char* buf, size_t len){
+  size_t i = 0;
+  for (; i < len - 1; ++i) {
+    if (fd.Read(&buf[i], 1) == 0) {
+      break;
+    }
+    if (buf[i] == delim) {
+      ++i;
+      break;
+    }
+  }
+  // 最後末尾にNULL文字を追加
+  buf[i] = '\0';
+  return i;
+}
