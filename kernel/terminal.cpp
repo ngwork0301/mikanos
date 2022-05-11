@@ -483,13 +483,13 @@ void Terminal::Print(const char* s, std::optional<size_t> len) {
 
 /**
  * @fn
- * ListAllEntries関数
+ * Terminal::ListAllEntriesメソッド
  * @brief 
  * 指定されたcluster内のディレクトリエントリをターミナルに出力する。
  * @param terminal 出力するターミナルインスタンス
  * @param dir_cluster リストするディレクトリのfatクラスタ
  */
-void ListAllEntries(Terminal* term, uint32_t dir_cluster) {
+void Terminal::ListAllEntries(Terminal* term, uint32_t dir_cluster) {
   // ディレクトリ内のディレクトリエントリを取得して、1クラスタあたりのエントリ数を取得
   // クラスタ　＞ ブロック＝セクタ、＞ バイト
   const auto kEntriesPerCluster =
@@ -513,8 +513,8 @@ void ListAllEntries(Terminal* term, uint32_t dir_cluster) {
 
       char name[13];
       fat::FormatName(dir[i], name);
-      term->Print(name);
-      term->Print("\n");
+      PrintToFD(*files_[1], name);
+      PrintToFD(*files_[1], "\n");
     }
 
     dir_cluster = fat::NextCluster(dir_cluster);
@@ -629,6 +629,8 @@ void Terminal::ExecuteLine() {
       .InitContext(TaskTerminal, reinterpret_cast<int64_t>(term_desc))
       .Wakeup()
       .ID();
+    // ターミナルウィンドウへのイベントは、右側のコマンドのタスクに送るように変更
+    (*layer_task_map)[layer_id_] = subtask_id;
   }
 
   if (strcmp(command, "echo") == 0) {
@@ -763,6 +765,8 @@ void Terminal::ExecuteLine() {
     pipe_fd->FinishWrite();
     __asm__("cli"); // 割り込み禁止
     auto [ ec, err ] = task_manager->WaitFinish(subtask_id);
+    // 差し替えたレイヤーとタスクにマッピングを元のターミナルのタスクに戻す
+    (*layer_task_map)[layer_id_] = task_.ID();
     __asm__("sti"); // 割り込み許可
     if (err) {
       Log(kWarn, "failed to wait finish. %s\n", err.Name());

@@ -78,6 +78,7 @@ class Terminal {
     std::deque<std::array<char, kLineMax>> cmd_history_{};
     //! 現在表示中のヒストリのインデックス(小さいほど新しい)
     int cmd_history_index_{-1};
+    void ListAllEntries(Terminal* term, uint32_t dir_cluster);
     Rectangle<int> HistoryUpDown(int direction);
 };
 
