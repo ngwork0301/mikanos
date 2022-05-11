@@ -570,9 +570,12 @@ void Terminal::ExecuteLine() {
   char* redirect_char = strchr(&linebuf_[0], '>');
   char* pipe_char = strchr(&linebuf_[0], '|');
   if (first_arg) {
-    // 第一引数があれば、コマンドと引数の間はNULL文字をいれて、アドレスを１つインクリメント
+    // 第一引数があれば、コマンドと引数の間はNULL文字をいれて、アドレスをインクリメント
     *first_arg = 0;
-    ++first_arg;
+    do {
+      // 空白文字が続くかぎりアドレスをインクリメントする
+      ++first_arg;
+    } while (isspace(*first_arg));
   }
 
   //! リダイレクトで出力先を変更する前のファイルディスクリプタ＝標準出力
@@ -691,28 +694,36 @@ void Terminal::ExecuteLine() {
     }
   } else if(strcmp(command, "cat") == 0) {
     char s[64];
-
-    // ファイルエントリを探す
-    auto [ file_entry, post_slash ] = fat::FindFile(first_arg);
-    if (!file_entry) {
-      sprintf(s, "no such file: %s\n", first_arg);
-      PrintToFD(*files_[2], s);
-      exit_code = 1;
-    } else if (file_entry->attr != fat::Attribute::kDirectory && post_slash) {
-      char name[13];
-      fat::FormatName(*file_entry, name);
-      PrintToFD(*files_[2], name);
-      PrintToFD(*files_[2], " is not a directory\n");
-      exit_code = 1;
+    std::shared_ptr<FileDescriptor> fd;
+    if (!first_arg || first_arg[0] == '\0') {
+      // 引数なしのときは標準入力
+      fd = files_[0];
     } else {
-      fat::FileDescriptor fd{*file_entry};
+
+      // ファイルエントリを探す
+      auto [ file_entry, post_slash ] = fat::FindFile(first_arg);
+      if (!file_entry) {
+        sprintf(s, "no such file: %s\n", first_arg);
+        PrintToFD(*files_[2], s);
+        exit_code = 1;
+      } else if (file_entry->attr != fat::Attribute::kDirectory && post_slash) {
+        char name[13];
+        fat::FormatName(*file_entry, name);
+        PrintToFD(*files_[2], name);
+        PrintToFD(*files_[2], " is not a directory\n");
+        exit_code = 1;
+      } else {
+        fd = std::make_shared<fat::FileDescriptor>(*file_entry);
+      }
+    }
+    if (fd) {
       char u8buf[1024];
 
       // 一時的にカーソルを非表示
       DrawCursor(false);
       while (true) {
         // 描画処理が遅くなるので、1行毎に再描画
-        if (ReadDelim(fd, '\n', u8buf, sizeof(u8buf)) == 0) {
+        if (ReadDelim(*fd, '\n', u8buf, sizeof(u8buf)) == 0) {
           break;
         }
 
