@@ -26,6 +26,10 @@ extern "C" void main(int argc, char** argv) {
       }
       if (events[0].type == AppEvent::kQuit) {
         break;
+      } else if (events[0].type == AppEvent::kMouseMove ||
+        events[0].type == AppEvent::kMouseButton ||
+        events[0].type == AppEvent::kKeyPush) {
+        // 何もしない
       } else {
         // Ctrl-Q以外のイベントが来たら、そのイベントを表示
         printf("Unknown event: type = %d\n", events[0].type);

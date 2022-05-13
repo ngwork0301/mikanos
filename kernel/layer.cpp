@@ -615,3 +615,36 @@ void ProcessLayerMessage(const Message& msg){
       break;
   }
 }
+
+/**
+ * @fn
+ * CloseLayer関数
+ * @brief 
+ * 指定されたレイヤーを閉じる
+ * @param layer_id レイヤーID
+ * @return Error 
+ */
+Error CloseLayer(unsigned int layer_id) {
+  Layer* layer = layer_manager->FindLayer(layer_id);
+
+  // 指定されたレイヤーがない場合はエラー
+  if (layer == nullptr) {
+    return MAKE_ERROR(Error::kNoSuchEntry);
+  }
+
+  // 再描画のため、削除するレイヤーの位置を調べる
+  const auto layer_pos = layer->GetPosition();
+  const auto win_size = layer->GetWindow()->Size();
+
+  __asm__("cli");   // 割り込み禁止
+  // 再描画のため、最下位のレイヤーをActivateする
+  active_layer->Activate(0);
+  layer_manager->RemoveLayer(layer_id);
+  // 消えた領域を再描画する。
+  layer_manager->Draw({layer_pos, win_size});
+  // 消したウィンドウをlayer_task_mapから削除
+  layer_task_map->erase(layer_id);
+  __asm__("sti");   // 割り込み許可
+
+  return MAKE_ERROR(Error::kSuccess);
+}

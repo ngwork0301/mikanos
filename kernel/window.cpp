@@ -3,6 +3,61 @@
 #include "logger.hpp"
 #include "window.hpp"
 
+namespace {
+
+  /**
+   * @fn
+   * DrawTextbox関数
+   * 
+   * @brief 
+   * テキストボックスを描画する。
+   * 
+   * @param [in] writer PixelWriterインスタンス
+   * @param [in] pos 描画位置
+   * @param [in] size 描画サイズ
+   * @param [in] backgroud 背景色
+   * @param [in] border_light 枠の色
+   * @param [in] border_dark 枠の影の色
+   */
+  void DrawTextbox(PixelWriter& writer,  Vector2D<int> pos, Vector2D<int> size,
+                  const PixelColor& backgroud,
+                  const PixelColor& border_light,
+                  const PixelColor& border_dark) {
+    auto fill_rect = 
+      [&writer](Vector2D<int> pos, Vector2D<int> size, const PixelColor& c) {
+        FillRectangle(writer, pos, size, c);
+      };
+    
+    // fill main box
+    fill_rect(pos + Vector2D<int>{1, 1}, size - Vector2D<int>{2, 2}, backgroud);
+
+    // draw border lines
+    fill_rect(pos,                            {size.x, 1}, border_light);
+    fill_rect(pos,                            {1, size.y}, border_light);
+    fill_rect(pos + Vector2D<int>{0, size.y}, {size.x, 1}, border_dark);
+    fill_rect(pos + Vector2D<int>{size.x, 0}, {1, size.y}, border_dark);
+  }
+
+  const int kCloseButtonWidth = 16;
+  const int kCloseButtonHeight = 14;
+  const char close_button[kCloseButtonHeight][kCloseButtonWidth + 1] = {
+    "...............@",
+    ".:::::::::::::$@",
+    ".:::::::::::::$@",
+    ".:::@@::::@@::$@",
+    ".::::@@::@@:::$@",
+    ".:::::@@@@::::$@",
+    ".::::::@@:::::$@",
+    ".:::::@@@@::::$@",
+    ".::::@@::@@:::$@",
+    ".:::@@::::@@::$@",
+    ".:::::::::::::$@",
+    ".:::::::::::::$@",
+    ".$$$$$$$$$$$$$$@",
+    ".@@@@@@@@@@@@@@@",
+  };
+}
+
 /**
  * @fn
  * Windowコンストラクタ
@@ -178,6 +233,19 @@ int Window::Height() const {
 
 /**
  * @fn
+ * Window::GetWindowRegionメソッド
+ * @brief 
+ * 指定した座標から領域の種類を判定する
+ * @param pos 判定したい座標
+ * @return WindowRegion 領域の種類
+ */
+WindowRegion Window::GetWindowRegion(Vector2D<int> pos) {
+  return WindowRegion::kOther;
+}
+
+
+/**
+ * @fn
  * ToplevelWindow::ToplevelWindowコンストラクタ
  * 
  * @brief Construct a new Toplevel Window:: Toplevel Window object
@@ -218,6 +286,28 @@ void ToplevelWindow::Deactivate() {
 
 /**
  * @fn
+ * ToplevelWindow::GetWindowRegionメソッド
+ * @brief 
+ * 指定した座標がこのウィンドウ内のどの領域に該当するか判定する
+ * @param pos 判定したい座標
+ * @return WindowRegion 
+ */
+WindowRegion ToplevelWindow::GetWindowRegion(Vector2D<int> pos) {
+  if (pos.x < 2 || Width() - 2 <= pos.x ||
+      pos.y < 2 || Height() - 2 <= pos.y) {
+    return WindowRegion::kBorder;
+  } else if (pos.y < kTopLeftMargin.y) {
+    if (Width() - 5 - kCloseButtonWidth <= pos.x && pos.x < Width() -5 &&
+        5 <= pos.y && pos.y < 5 + kCloseButtonHeight) {
+      return WindowRegion::kCloseButton;
+    }
+    return WindowRegion::kTitleBar;
+  }
+  return WindowRegion::kOther;
+}
+
+/**
+ * @fn
  * ToplevelWindow::InnerSizeメソッド
  * 
  * @brief 
@@ -228,26 +318,6 @@ Vector2D<int> ToplevelWindow::InnerSize() const {
   return Size() - kTopLeftMargin - kBottomRightMargin;
 }
 
-namespace {
-  const int kCloseButtonWidth = 16;
-  const int kCloseButtonHeight = 14;
-  const char close_button[kCloseButtonHeight][kCloseButtonWidth + 1] = {
-    "...............@",
-    ".:::::::::::::$@",
-    ".:::::::::::::$@",
-    ".:::@@::::@@::$@",
-    ".::::@@::@@:::$@",
-    ".:::::@@@@::::$@",
-    ".::::::@@:::::$@",
-    ".:::::@@@@::::$@",
-    ".::::@@::@@:::$@",
-    ".:::@@::::@@::$@",
-    ".:::::::::::::$@",
-    ".:::::::::::::$@",
-    ".$$$$$$$$$$$$$$@",
-    ".@@@@@@@@@@@@@@@",
-  };
-}
 
 /**
  * @fn
@@ -327,42 +397,6 @@ void DrawWindow(PixelWriter& writer, const char* title) {
       }
       writer.Write({win_w - 5 - kCloseButtonWidth + x, 5 + y}, c);
     }
-  }
-}
-
-namespace {
-
-  /**
-   * @fn
-   * DrawTextbox関数
-   * 
-   * @brief 
-   * テキストボックスを描画する。
-   * 
-   * @param [in] writer PixelWriterインスタンス
-   * @param [in] pos 描画位置
-   * @param [in] size 描画サイズ
-   * @param [in] backgroud 背景色
-   * @param [in] border_light 枠の色
-   * @param [in] border_dark 枠の影の色
-   */
-  void DrawTextbox(PixelWriter& writer,  Vector2D<int> pos, Vector2D<int> size,
-                  const PixelColor& backgroud,
-                  const PixelColor& border_light,
-                  const PixelColor& border_dark) {
-    auto fill_rect = 
-      [&writer](Vector2D<int> pos, Vector2D<int> size, const PixelColor& c) {
-        FillRectangle(writer, pos, size, c);
-      };
-    
-    // fill main box
-    fill_rect(pos + Vector2D<int>{1, 1}, size - Vector2D<int>{2, 2}, backgroud);
-
-    // draw border lines
-    fill_rect(pos,                            {size.x, 1}, border_light);
-    fill_rect(pos,                            {1, size.y}, border_light);
-    fill_rect(pos + Vector2D<int>{0, size.y}, {size.x, 1}, border_dark);
-    fill_rect(pos + Vector2D<int>{size.x, 0}, {1, size.y}, border_dark);
   }
 }
 

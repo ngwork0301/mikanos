@@ -36,6 +36,7 @@ struct Message {
     kMouseButton,
     kWindowActive,
     kPipe,
+    kWindowClose,
   } type;
 
   //! kLayer, kLayerFinishでつかう送信元タスクのID
@@ -87,6 +88,10 @@ struct Message {
       char data[16];
       uint8_t len;
     } pipe;
+
+    struct {
+      unsigned int layer_id;
+    } window_close;
   } arg;
 
 };

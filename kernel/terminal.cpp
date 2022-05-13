@@ -1322,6 +1322,12 @@ void TaskTerminal(uint64_t task_id, int64_t data) {
       case Message::kWindowActive:
         window_isactive = msg->arg.window_active.activate;
         break;
+      case Message::kWindowClose:
+        CloseLayer(msg->arg.window_close.layer_id);
+        __asm__("cli"); // 割り込み禁止
+        task_manager->Finish(terminal->LastExitCode());
+        __asm__("sti"); //割り込み許可
+        break;
       default:
         break;
     }

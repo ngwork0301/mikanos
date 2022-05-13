@@ -79,6 +79,7 @@ class LayerManager {
 
     void RemoveLayer(unsigned int id);
 
+
   private:
     //! フレームバッファ
     FrameBuffer* screen_{nullptr};
@@ -144,3 +145,4 @@ extern std::map<unsigned int, uint64_t>* layer_task_map;
 
 void InitializeLayer();
 void ProcessLayerMessage(const Message& msg);
+Error CloseLayer(unsigned int layer_id);
