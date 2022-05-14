@@ -977,7 +977,7 @@ WithError<int> Terminal::ExecuteFile(fat::DirectoryEntry& file_entry, char* comm
   }
 
   // アプリ用のスタック領域を指定
-  const int stack_size = 8 * 4096;
+  const int stack_size = 16 * 4096;
   LinearAddress4Level stack_frame_addr{0xffff'ffff'ffff'f000 - stack_size};
   // 1ページ分階層ページング構造から物理ページを取得
   if (auto err = SetupPageMaps(stack_frame_addr, stack_size / 4096)) {
